@@ -16,6 +16,16 @@ pub fn build(b: *std.Build) void {
         .target = target,
     }) });
 
+    const tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("test/disruptor.zig"),
+        .optimize = optimize,
+        .target = target,
+    }) });
+    tests.root_module.addImport("zigrupt", zigrupt);
+
+    const test_step = b.step("test", "Run disruptor tests");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+
     bench_exe.root_module.addImport("zigrupt", zigrupt);
 
     const bench_cmd = b.addRunArtifact(bench_exe);
