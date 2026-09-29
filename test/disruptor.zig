@@ -2,20 +2,20 @@ const std = @import("std");
 const Disruptor = @import("zigrupt").Disruptor;
 
 test "single consumer reads in order across buffer wraps" {
-    var queue: Disruptor(u8, .{ .buffer_size = 4, .consumer_count = 1 }) = .{};
+    var queue = try Disruptor(usize).init(.{ .consumer_count = 1 });
     try std.testing.expectEqual(null, queue.consume(0));
 
     for (0..4) |batch| {
-        for (0..4) |offset| queue.publish(@intCast(batch * 4 + offset));
-        for (0..4) |offset| {
-            try std.testing.expectEqual(@as(?u8, @intCast(batch * 4 + offset)), queue.consume(0));
+        for (0..queue.buffer.len) |offset| queue.publish(batch * queue.buffer.len + offset);
+        for (0..queue.buffer.len) |offset| {
+            try std.testing.expectEqual(@as(?usize, batch * queue.buffer.len + offset), queue.consume(0));
         }
         try std.testing.expectEqual(null, queue.consume(0));
     }
 }
 
 test "each consumer receives the same items independently" {
-    var queue: Disruptor(u8, .{ .buffer_size = 4, .consumer_count = 2 }) = .{};
+    var queue = try Disruptor(u8).init(.{ .consumer_count = 2 });
     for (0..4) |value| queue.publish(@intCast(value));
 
     for (0..4) |value| {
@@ -28,18 +28,18 @@ test "each consumer receives the same items independently" {
     try std.testing.expectEqual(null, queue.consume(1));
 }
 
-const BackpressureQueue = Disruptor(u8, .{ .buffer_size = 4, .consumer_count = 2 });
+const BackpressureQueue = Disruptor(usize);
 
 fn publishWhenReady(queue: *BackpressureQueue, started: *std.atomic.Value(bool), finished: *std.atomic.Value(bool)) void {
     started.store(true, .release);
-    queue.publish(4);
+    queue.publish(queue.buffer.len);
     finished.store(true, .release);
 }
 
 test "slow subscriber prevents overwriting an unread slot" {
-    var queue: BackpressureQueue = .{};
-    for (0..4) |value| queue.publish(@intCast(value));
-    for (0..4) |value| try std.testing.expectEqual(@as(?u8, @intCast(value)), queue.consume(0));
+    var queue = try BackpressureQueue.init(.{ .consumer_count = 2 });
+    for (0..queue.buffer.len) |value| queue.publish(value);
+    for (0..queue.buffer.len) |value| try std.testing.expectEqual(@as(?usize, value), queue.consume(0));
 
     var started = std.atomic.Value(bool).init(false);
     var finished = std.atomic.Value(bool).init(false);
@@ -52,18 +52,14 @@ test "slow subscriber prevents overwriting an unread slot" {
     const first = queue.consume(1);
     publisher.join();
     try std.testing.expect(!finished_early);
-    try std.testing.expectEqual(@as(?u8, 0), first);
-    try std.testing.expectEqual(@as(?u8, 4), queue.consume(0));
-    for (1..5) |value| try std.testing.expectEqual(@as(?u8, @intCast(value)), queue.consume(1));
+    try std.testing.expectEqual(@as(?usize, 0), first);
+    try std.testing.expectEqual(@as(?usize, queue.buffer.len), queue.consume(0));
+    for (1..queue.buffer.len + 1) |value| try std.testing.expectEqual(@as(?usize, value), queue.consume(1));
 }
 
 const items_per_publisher = 128;
 const total_items = 2 * items_per_publisher;
-const ConcurrentQueue = Disruptor(usize, .{
-    .buffer_size = 8,
-    .consumer_count = 2,
-    .publisher_count = 2,
-});
+const ConcurrentQueue = Disruptor(usize);
 
 fn publishRange(queue: *ConcurrentQueue, start: usize) void {
     for (start..start + items_per_publisher) |value| queue.publish(value);
@@ -80,7 +76,7 @@ fn collect(queue: *ConcurrentQueue, id: usize, items: *[total_items]usize) void 
 }
 
 test "concurrent publishers and subscribers preserve every publisher's order" {
-    var queue: ConcurrentQueue = .{};
+    var queue = try ConcurrentQueue.init(.{ .consumer_count = 2, .publisher_count = 2 });
     var first_items: [total_items]usize = undefined;
     var second_items: [total_items]usize = undefined;
 
