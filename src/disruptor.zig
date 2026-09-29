@@ -13,7 +13,8 @@ const buffer_size = 2048;
 const max_consumer_count = 128;
 
 pub const DisruptorError = error{
-    TooManyConsumers,
+    InvalidConfig,
+    InvalidConsumerID,
 };
 
 pub fn Disruptor(
@@ -29,7 +30,10 @@ pub fn Disruptor(
         const Self = @This();
 
         pub fn init(options: DisruptorOptions) DisruptorError!Self {
-            if (options.consumer_count > max_consumer_count) return DisruptorError.TooManyConsumers;
+            if (options.consumer_count > max_consumer_count) return DisruptorError.InvalidConfig;
+            if (options.consumer_count < 1) return DisruptorError.InvalidConfig;
+            if (options.publisher_count < 1) return DisruptorError.InvalidConfig;
+
             return .{
                 .options = options,
             };
@@ -54,7 +58,9 @@ pub fn Disruptor(
             self.buffer_seq[(p_seq & mask)].store(p_seq, .release);
         }
 
-        pub fn consume(self: *Self, consumer_id: usize) ?T {
+        pub fn consume(self: *Self, consumer_id: usize) DisruptorError!?T {
+            if (consumer_id >= self.options.consumer_count) return DisruptorError.InvalidConsumerID;
+
             const c_seq = self.c_seqs[consumer_id].value.load(.monotonic);
 
             const buffer_seq = self.buffer_seq[(c_seq & mask)].load(.acquire);
@@ -66,22 +72,6 @@ pub fn Disruptor(
             const data = self.buffer[(c_seq & mask)];
             self.c_seqs[consumer_id].value.store(c_seq + 1, .release);
             return data;
-        }
-
-        pub fn printState(self: *Self) void {
-            std.debug.print("---------------\n", .{});
-            std.debug.print("p_seq: {d}, mask: {d}\n", .{ self.p_seq.load(.monotonic), mask });
-            for (&self.c_seqs, 0..) |*seq, i| {
-                std.debug.print("c_seqs[{d}]: {d}\n", .{ i, seq.value.load(.monotonic) });
-            }
-            for (&self.buffer_seq, 0..) |*seq, i| {
-                const value = seq.load(.acquire);
-                std.debug.print("buffer_seq[{d}]: {d}\n", .{ i, value });
-                if (value != 0) {
-                    std.debug.print("buffer[{d}]: {any}\n", .{ i, self.buffer[i] });
-                }
-            }
-            std.debug.print("---------------\n\n", .{});
         }
 
         fn isSlotSafeToWrite(self: *Self, seq: usize) bool {

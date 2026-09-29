@@ -184,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
     defer threaded.deinit();
     const args = try CliArgs.init(allocator, init.minimal);
 
-    std.debug.print("M/s = million published items/s; every subscriber receives all items (order checked)\n", .{});
+    std.debug.print("M/s = million published items/s; every subscriber receives all items\n", .{});
     std.debug.print("Queue             Pub Sub    Items         ms        M/s  Check\n", .{});
     std.debug.print("----------------------------------------------------------------\n", .{});
     try case(args, init.io);

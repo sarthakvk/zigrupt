@@ -3,15 +3,21 @@ const Disruptor = @import("zigrupt").Disruptor;
 
 test "single consumer reads in order across buffer wraps" {
     var queue = try Disruptor(usize).init(.{ .consumer_count = 1 });
-    try std.testing.expectEqual(null, queue.consume(0));
+    try std.testing.expectEqual(null, try queue.consume(0));
 
     for (0..4) |batch| {
         for (0..queue.buffer.len) |offset| queue.publish(batch * queue.buffer.len + offset);
         for (0..queue.buffer.len) |offset| {
-            try std.testing.expectEqual(@as(?usize, batch * queue.buffer.len + offset), queue.consume(0));
+            try std.testing.expectEqual(@as(?usize, batch * queue.buffer.len + offset), try queue.consume(0));
         }
-        try std.testing.expectEqual(null, queue.consume(0));
+        try std.testing.expectEqual(null, try queue.consume(0));
     }
+}
+
+test "consume rejects IDs outside configured consumers" {
+    var queue = try Disruptor(u8).init(.{ .consumer_count = 1 });
+    try std.testing.expectError(error.InvalidConsumerID, queue.consume(1));
+    try std.testing.expectError(error.InvalidConsumerID, queue.consume(std.math.maxInt(usize)));
 }
 
 test "each consumer receives the same items independently" {
@@ -19,13 +25,13 @@ test "each consumer receives the same items independently" {
     for (0..4) |value| queue.publish(@intCast(value));
 
     for (0..4) |value| {
-        try std.testing.expectEqual(@as(?u8, @intCast(value)), queue.consume(0));
+        try std.testing.expectEqual(@as(?u8, @intCast(value)), try queue.consume(0));
     }
     for (0..4) |value| {
-        try std.testing.expectEqual(@as(?u8, @intCast(value)), queue.consume(1));
+        try std.testing.expectEqual(@as(?u8, @intCast(value)), try queue.consume(1));
     }
-    try std.testing.expectEqual(null, queue.consume(0));
-    try std.testing.expectEqual(null, queue.consume(1));
+    try std.testing.expectEqual(null, try queue.consume(0));
+    try std.testing.expectEqual(null, try queue.consume(1));
 }
 
 const BackpressureQueue = Disruptor(usize);
@@ -39,7 +45,7 @@ fn publishWhenReady(queue: *BackpressureQueue, started: *std.atomic.Value(bool),
 test "slow subscriber prevents overwriting an unread slot" {
     var queue = try BackpressureQueue.init(.{ .consumer_count = 2 });
     for (0..queue.buffer.len) |value| queue.publish(value);
-    for (0..queue.buffer.len) |value| try std.testing.expectEqual(@as(?usize, value), queue.consume(0));
+    for (0..queue.buffer.len) |value| try std.testing.expectEqual(@as(?usize, value), try queue.consume(0));
 
     var started = std.atomic.Value(bool).init(false);
     var finished = std.atomic.Value(bool).init(false);
@@ -49,12 +55,12 @@ test "slow subscriber prevents overwriting an unread slot" {
     for (0..100) |_| std.Thread.yield() catch {};
     const finished_early = finished.load(.acquire);
 
-    const first = queue.consume(1);
+    const first = try queue.consume(1);
     publisher.join();
     try std.testing.expect(!finished_early);
     try std.testing.expectEqual(@as(?usize, 0), first);
-    try std.testing.expectEqual(@as(?usize, queue.buffer.len), queue.consume(0));
-    for (1..queue.buffer.len + 1) |value| try std.testing.expectEqual(@as(?usize, value), queue.consume(1));
+    try std.testing.expectEqual(@as(?usize, queue.buffer.len), try queue.consume(0));
+    for (1..queue.buffer.len + 1) |value| try std.testing.expectEqual(@as(?usize, value), try queue.consume(1));
 }
 
 const items_per_publisher = 128;
@@ -68,7 +74,7 @@ fn publishRange(queue: *ConcurrentQueue, start: usize) void {
 fn collect(queue: *ConcurrentQueue, id: usize, items: *[total_items]usize) void {
     var count: usize = 0;
     while (count < items.len) {
-        if (queue.consume(id)) |value| {
+        if ((queue.consume(id) catch unreachable)) |value| {
             items[count] = value;
             count += 1;
         }
@@ -100,6 +106,6 @@ test "concurrent publishers and subscribers preserve every publisher's order" {
         }
         try std.testing.expectEqual([_]usize{ items_per_publisher, items_per_publisher }, next);
     }
-    try std.testing.expectEqual(null, queue.consume(0));
-    try std.testing.expectEqual(null, queue.consume(1));
+    try std.testing.expectEqual(null, try queue.consume(0));
+    try std.testing.expectEqual(null, try queue.consume(1));
 }
