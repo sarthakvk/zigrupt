@@ -55,7 +55,6 @@ pub fn Disruptor(
         }
 
         pub fn consume(self: *Self, consumer_id: usize) ?T {
-            //TODO: do we need atomics, if consumer seq is written by the same thread?
             const c_seq = self.c_seqs[consumer_id].value.load(.monotonic);
 
             const buffer_seq = self.buffer_seq[(c_seq & mask)].load(.acquire);
