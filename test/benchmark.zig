@@ -66,7 +66,7 @@ fn LockedQueue(comptime T: type) type {
             std.Thread.yield() catch {};
         }
 
-        pub fn consume(self: *Self, id: usize) ?T {
+        pub fn consume(self: *Self, id: usize) !?T {
             self.acquire();
             defer self.release();
             if (self.buffer.items.len <= self.consumers[id]) return null;
@@ -117,12 +117,12 @@ fn Bench(comptime Queue: type) type {
             for (0..self.per_publisher) |_| self.queue.publish(id);
         }
 
-        fn consume(self: *Self, id: usize) void {
+        fn consume(self: *Self, id: usize) !void {
             const total = self.per_publisher * self.publishers;
             var consumed: usize = 0;
             self.wait();
             while (consumed < total) {
-                if (self.queue.consume(id) != null) consumed += 1;
+                if (try self.queue.consume(id) != null) consumed += 1;
             }
         }
 
