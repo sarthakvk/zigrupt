@@ -29,6 +29,10 @@ pub fn build(b: *std.Build) void {
     bench_exe.root_module.addImport("zigrupt", zigrupt);
 
     const bench_cmd = b.addRunArtifact(bench_exe);
+
+    // pass args to bench
+    if (b.args) |args| bench_cmd.addArgs(args);
+
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&bench_cmd.step);
 }
