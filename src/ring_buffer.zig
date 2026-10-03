@@ -90,7 +90,7 @@ pub fn RingBufferEventBus(
 
             // this handles partial failures, the threads that were started
             // will receive the signal to stop.
-            errdefer self.stopped.store(true, .monotonic);
+            errdefer self.stop();
 
             for (0..event_handlers.len) |eid| {
                 self.threads[eid] = try std.Thread.spawn(
@@ -107,6 +107,8 @@ pub fn RingBufferEventBus(
             self.stopped.store(true, .monotonic);
 
             for (self.threads) |th_| if (th_) |th| th.join();
+
+            @memset(self.threads, null);
         }
 
         fn handleEvent(self: *Self, handler_id: usize) void {
