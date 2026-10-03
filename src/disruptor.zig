@@ -1,3 +1,7 @@
+// disruptor.zig
+// this was a poc
+//
+
 const std = @import("std");
 
 pub const DisruptorOptions = struct {

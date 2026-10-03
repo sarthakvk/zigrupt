@@ -23,8 +23,11 @@ pub fn build(b: *std.Build) void {
     }) });
     tests.root_module.addImport("zigrupt", zigrupt);
 
-    const test_step = b.step("test", "Run disruptor tests");
+    const source_tests = b.addTest(.{ .root_module = zigrupt });
+
+    const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+    test_step.dependOn(&b.addRunArtifact(source_tests).step);
 
     bench_exe.root_module.addImport("zigrupt", zigrupt);
 
