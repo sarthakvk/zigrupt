@@ -17,6 +17,7 @@ pub const EventBusError = error{
     InvalidConsumerID,
     IncorrectBufferSize,
     BusStopped,
+    DuplicateStart,
 };
 
 pub fn RingBufferEventBus(
@@ -84,6 +85,9 @@ pub fn RingBufferEventBus(
         }
 
         pub fn start(self: *Self) !void {
+            const started = self.started.load(.monotonic);
+            if (started) return EventBusError.DuplicateStart;
+
             // this handles partial failures, the threads that were started
             // will receive the signal to stop.
             errdefer self.stopped.store(true, .monotonic);
@@ -221,6 +225,22 @@ test "Ring buffer init" {
         false,
         &handlers,
     ).init(allocator, 120));
+}
+
+test "DuplicateStart" {
+    const allocator = testing.allocator;
+
+    const handlers = [_]*const fn (usize) void{
+        createIntEventHandler(1, 9).handler,
+    };
+
+    var eb = try RingBufferEventBus(usize, false, &handlers).init(allocator, 1024);
+    defer eb.deinit();
+
+    try eb.start();
+    defer eb.stop();
+
+    try testing.expectError(EventBusError.DuplicateStart, eb.start());
 }
 
 test "single producer tests" {
