@@ -1,0 +1,1 @@
+Answer only the user's question. Treat code as work in progress; do not point out unrelated bugs, incomplete code, or compilation errors unless the user explicitly asks you to review or diagnose them.
