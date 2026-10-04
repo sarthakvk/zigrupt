@@ -16,8 +16,18 @@ pub const EventBusError = error{
     InvalidConfig,
     InvalidConsumerID,
     IncorrectBufferSize,
-    BusStopped,
-    DuplicateStart,
+    BusIdle,
+    BusStarting,
+    BusRunning,
+    BusDraining,
+    NotLifecycleOwner,
+};
+
+pub const EventBusState = enum(u8) {
+    idle,
+    starting,
+    running,
+    draining,
 };
 
 pub fn RingBufferEventBus(
@@ -31,12 +41,10 @@ pub fn RingBufferEventBus(
         cursor: *PaddedSeq,
         consumer_seq: []PaddedSeq,
         mask: usize,
-
-        // Atomics to track thread lifecycle
-        started: atomic.Value(bool) = .init(false),
-        stopped: atomic.Value(bool) = .init(false),
+        state: atomic.Value(EventBusState),
 
         threads: []?std.Thread,
+        lifecycle_owner: std.Thread.Id,
         allocator: mem.Allocator,
 
         const Self = @This();
@@ -71,7 +79,9 @@ pub fn RingBufferEventBus(
                 .cursor = cursor,
                 .consumer_seq = consumer_seq,
                 .mask = (buffer_size - 1),
+                .state = .init(.idle),
                 .threads = threads,
+                .lifecycle_owner = std.Thread.getCurrentId(),
                 .allocator = allocator,
             };
         }
@@ -85,12 +95,26 @@ pub fn RingBufferEventBus(
         }
 
         pub fn start(self: *Self) !void {
-            const started = self.started.load(.monotonic);
-            if (started) return EventBusError.DuplicateStart;
+            try self.ensureLifecycleOwner();
+
+            const state = self.state.load(.acquire);
+
+            // Invariant: start can only be called when the bus is
+            // idle.
+            switch (state) {
+                .draining => return EventBusError.BusDraining,
+                .running => return EventBusError.BusRunning,
+                .starting => return EventBusError.BusStarting,
+                .idle => {},
+            }
+
+            self.state.store(.starting, .monotonic);
 
             // this handles partial failures, the threads that were started
             // will receive the signal to stop.
-            errdefer self.stop();
+            // when the stop will be called here, the state can only be
+            // idle/running
+            errdefer self.stop() catch unreachable;
 
             for (0..event_handlers.len) |eid| {
                 self.threads[eid] = try std.Thread.spawn(
@@ -100,30 +124,43 @@ pub fn RingBufferEventBus(
                 );
             }
 
-            self.started.store(true, .release);
+            //Invariant: after start exits, the bus will be in running state.
+            self.state.store(.running, .release);
         }
 
-        pub fn stop(self: *Self) void {
-            self.stopped.store(true, .monotonic);
+        pub fn stop(self: *Self) !void {
+            try self.ensureLifecycleOwner();
+
+            const state = self.state.load(.monotonic);
+
+            // Invariant: stop can only be called when the bus is
+            // either running or starting.
+            switch (state) {
+                .draining => return EventBusError.BusDraining,
+                .idle => return EventBusError.BusIdle,
+                .running => {},
+                .starting => {},
+            }
+
+            self.state.store(.draining, .monotonic);
 
             for (self.threads) |th_| if (th_) |th| th.join();
-
             @memset(self.threads, null);
+
+            // Invariant: After stop exits, the bus will be in idle state.
+            self.state.store(.idle, .release);
         }
 
         fn handleEvent(self: *Self, handler_id: usize) void {
             const handler = event_handlers[handler_id];
             var c_seq = self.consumer_seq[handler_id].value.load(.monotonic);
-            var stopped = false;
-            var started = false;
 
-            // waiting for start
-            while (!started and !stopped) {
-                stopped = self.stopped.load(.monotonic);
-                started = self.started.load(.monotonic);
-            }
+            var state = self.state.load(.monotonic);
 
-            while (!stopped) : (stopped = self.stopped.load(.monotonic)) {
+            // Invariant: Events are only consumed when the bus is in running/draining state.
+            while (state == .starting) : (state = self.state.load(.monotonic)) continue;
+
+            while (state == .running) : (state = self.state.load(.monotonic)) {
                 const buffer_seq = self.buffer_seq[(c_seq & self.mask)].load(.acquire);
 
                 if (buffer_seq == 0 or c_seq > buffer_seq) continue;
@@ -136,6 +173,13 @@ pub fn RingBufferEventBus(
                 self.consumer_seq[handler_id].value.store(c_seq, .release);
             }
 
+            // Invariant: after running, the state can only be draining
+            // until all the handler threads join.
+            std.debug.assert(state == .draining);
+
+            // Cursor will always be the next available sequence
+            // once the event handlers reach cursor, they've consumed
+            // all the in-flight/queued events
             const cursor = self.cursor.value.load(.monotonic);
 
             while (c_seq < cursor) {
@@ -153,12 +197,28 @@ pub fn RingBufferEventBus(
         }
 
         pub fn produce(self: *Self, event: T) !void {
-            const stopped = self.stopped.load(.monotonic);
+            const state = self.state.load(.monotonic);
 
-            if (stopped) return EventBusError.BusStopped;
+            // Invariant: Bus will only accept events when
+            // it is in running state.
+            switch (state) {
+                .draining => return EventBusError.BusDraining,
+                .starting => return EventBusError.BusStarting,
+                .idle => return EventBusError.BusIdle,
+                .running => {},
+            }
 
+            // select producer strategy, this will be done at comptime, as the multi_producer is a comptime argument.
             const produce_fn = if (multi_producer) Self.multi_producer_produce else Self.single_producer_produce;
             try produce_fn(self, event);
+        }
+
+        fn ensureLifecycleOwner(self: *Self) !void {
+            if (!self.isLifecycleOwner()) return EventBusError.NotLifecycleOwner;
+        }
+
+        fn isLifecycleOwner(self: *Self) bool {
+            return self.lifecycle_owner == std.Thread.getCurrentId();
         }
 
         fn multi_producer_produce(self: *Self, event: T) !void {
@@ -240,9 +300,41 @@ test "DuplicateStart" {
     defer eb.deinit();
 
     try eb.start();
-    defer eb.stop();
+    defer eb.stop() catch {};
 
-    try testing.expectError(EventBusError.DuplicateStart, eb.start());
+    try testing.expectError(EventBusError.BusRunning, eb.start());
+}
+
+test "start and stop require lifecycle owner" {
+    const allocator = testing.allocator;
+    const handlers = [_]*const fn (usize) void{
+        createIntEventHandler(1, 9).handler,
+    };
+
+    var bus = try RingBufferEventBus(usize, false, &handlers).init(allocator, 1024);
+    defer bus.deinit();
+
+    const worker = struct {
+        fn run(eb: *@TypeOf(bus), result: *?anyerror, start_bus: bool) void {
+            const operation = if (start_bus) eb.start() else eb.stop();
+            operation catch |err| {
+                result.* = err;
+            };
+        }
+    };
+
+    var result: ?anyerror = null;
+    var thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, true });
+    thread.join();
+    try testing.expectEqual(@as(?anyerror, EventBusError.NotLifecycleOwner), result);
+
+    try bus.start();
+    defer bus.stop() catch {};
+
+    result = null;
+    thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, false });
+    thread.join();
+    try testing.expectEqual(@as(?anyerror, EventBusError.NotLifecycleOwner), result);
 }
 
 test "single producer tests" {
@@ -264,22 +356,20 @@ test "single producer tests" {
     var bus = try RingBufferEventBus(usize, false, &handlers).init(allocator, 16);
     defer bus.deinit();
 
-    try testing.expectEqual(bus.started.raw, false);
-    try testing.expectEqual(bus.stopped.raw, false);
+    try testing.expectEqual(bus.state.raw, EventBusState.idle);
 
     try bus.start();
 
-    try testing.expectEqual(bus.started.raw, true);
-    try testing.expectEqual(bus.stopped.raw, false);
+    try testing.expectEqual(bus.state.raw, EventBusState.running);
 
     for (0..10) |i| {
         try bus.produce(i);
     }
 
-    bus.stop();
+    try testing.expectEqual(bus.state.raw, EventBusState.running);
+    try bus.stop();
 
-    try testing.expectEqual(bus.started.raw, true);
-    try testing.expectEqual(bus.stopped.raw, true);
+    try testing.expectEqual(bus.state.raw, EventBusState.idle);
 
     inline for (0..4) |hs| {
         for (handler_struct[hs].out, 0..) |out, exp| {
