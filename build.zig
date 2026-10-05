@@ -25,9 +25,17 @@ pub fn build(b: *std.Build) void {
 
     const source_tests = b.addTest(.{ .root_module = zigrupt });
 
+    const concurrency_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("test/ring_buffer_concurrency.zig"),
+        .optimize = optimize,
+        .target = target,
+    }) });
+    concurrency_tests.root_module.addImport("zigrupt", zigrupt);
+
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(source_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_tests).step);
 
     bench_exe.root_module.addImport("zigrupt", zigrupt);
 
