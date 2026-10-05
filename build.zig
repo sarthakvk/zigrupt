@@ -32,10 +32,18 @@ pub fn build(b: *std.Build) void {
     }) });
     ring_buffer_tests.root_module.addImport("zigrupt", zigrupt);
 
+    const waiting_strategy_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("test/waiting_strategy.zig"),
+        .optimize = optimize,
+        .target = target,
+    }) });
+    waiting_strategy_tests.root_module.addImport("zigrupt", zigrupt);
+
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(source_tests).step);
     test_step.dependOn(&b.addRunArtifact(ring_buffer_tests).step);
+    test_step.dependOn(&b.addRunArtifact(waiting_strategy_tests).step);
 
     bench_exe.root_module.addImport("zigrupt", zigrupt);
 
