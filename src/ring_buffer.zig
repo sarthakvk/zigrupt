@@ -128,6 +128,14 @@ pub fn RingBufferEventBus(
             self.state.store(.running, .release);
         }
 
+        // Stop the Bus
+        // This method will put the bus into `draining` state and wait for the
+        // even handlers to finish consuming published events.
+        //
+        // It takes no gurantee for in-flight events, they might be dropped It is callers
+        // responsiblity to make sure the production has stopped before calling stop.
+        //
+        // Once the stop returns the bus will be in `idle` state and can be started again.
         pub fn stop(self: *Self) !void {
             try self.ensureLifecycleOwner();
 
