@@ -4,6 +4,9 @@
 
 const std = @import("std");
 const atomic = std.atomic;
+const waiting_strategy = @import("waiting_strategy.zig");
+
+const BusySpinWaitingStrategy = waiting_strategy.BusySpin;
 
 const testing = std.testing;
 const mem = std.mem;
@@ -34,7 +37,12 @@ pub fn RingBufferEventBus(
     comptime T: type,
     multi_producer: bool,
     event_handlers: []const *const fn (T) void,
+    PublisherWaitingStrategy: type,
+    ConsumerWaitingStrategy: type,
 ) type {
+    waiting_strategy.validateWaitingStrategy(PublisherWaitingStrategy);
+    waiting_strategy.validateWaitingStrategy(ConsumerWaitingStrategy);
+
     return struct {
         buffer: []T,
         buffer_seq: []atomic.Value(usize),
@@ -166,12 +174,15 @@ pub fn RingBufferEventBus(
             var state = self.state.load(.monotonic);
 
             // Invariant: Events are only consumed when the bus is in running/draining state.
-            while (state == .starting) : (state = self.state.load(.monotonic)) continue;
+            while (state == .starting) : (state = self.state.load(.monotonic)) ConsumerWaitingStrategy.wait();
 
             while (state == .running) : (state = self.state.load(.monotonic)) {
                 const buffer_seq = self.buffer_seq[(c_seq & self.mask)].load(.acquire);
 
-                if (buffer_seq == 0 or c_seq > buffer_seq) continue;
+                if (buffer_seq == 0 or c_seq > buffer_seq) {
+                    ConsumerWaitingStrategy.wait();
+                    continue;
+                }
 
                 const event = self.buffer[(c_seq & self.mask)];
 
@@ -238,7 +249,7 @@ pub fn RingBufferEventBus(
         fn single_producer_produce(self: *Self, event: T) !void {
             const claimed_seq = self.cursor.value.fetchAdd(1, .monotonic);
             const buffer_idx = (claimed_seq & self.mask);
-            if (!self.isSlotSafeToWrite(claimed_seq)) @panic("Implement producer waiting strategy!");
+            while (!self.isSlotSafeToWrite(claimed_seq)) PublisherWaitingStrategy.wait();
 
             self.buffer[buffer_idx] = event;
             self.buffer_seq[buffer_idx].store(claimed_seq, .release);
@@ -287,13 +298,21 @@ test "Ring buffer init" {
         createIntEventHandler(1, 9).handler,
     };
 
-    var eb = try RingBufferEventBus(usize, false, &handlers).init(allocator, 1024);
+    var eb = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        BusySpinWaitingStrategy,
+        BusySpinWaitingStrategy,
+    ).init(allocator, 1024);
     defer eb.deinit();
 
     try testing.expectError(EventBusError.IncorrectBufferSize, RingBufferEventBus(
         usize,
         false,
         &handlers,
+        BusySpinWaitingStrategy,
+        BusySpinWaitingStrategy,
     ).init(allocator, 120));
 }
 
@@ -304,7 +323,13 @@ test "DuplicateStart" {
         createIntEventHandler(1, 9).handler,
     };
 
-    var eb = try RingBufferEventBus(usize, false, &handlers).init(allocator, 1024);
+    var eb = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        BusySpinWaitingStrategy,
+        BusySpinWaitingStrategy,
+    ).init(allocator, 1024);
     defer eb.deinit();
 
     try eb.start();
@@ -319,7 +344,13 @@ test "start and stop require lifecycle owner" {
         createIntEventHandler(1, 9).handler,
     };
 
-    var bus = try RingBufferEventBus(usize, false, &handlers).init(allocator, 1024);
+    var bus = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        BusySpinWaitingStrategy,
+        BusySpinWaitingStrategy,
+    ).init(allocator, 1024);
     defer bus.deinit();
 
     const worker = struct {
@@ -361,7 +392,13 @@ test "single producer tests" {
         handler_struct[3].handler,
     };
 
-    var bus = try RingBufferEventBus(usize, false, &handlers).init(allocator, 16);
+    var bus = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        BusySpinWaitingStrategy,
+        BusySpinWaitingStrategy,
+    ).init(allocator, 8);
     defer bus.deinit();
 
     try testing.expectEqual(bus.state.raw, EventBusState.idle);
