@@ -2,6 +2,130 @@ const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 
+test "Ring buffer init" {
+    const allocator = std.testing.allocator;
+
+    const handlers = [_]*const fn (usize) void{
+        Recorder(9).handle,
+    };
+
+    var eb = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        waiting_strategy.BusySpin,
+        waiting_strategy.BusySpin,
+    ).init(allocator, 1024);
+    defer eb.deinit();
+
+    try std.testing.expectError(error.IncorrectBufferSize, RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        waiting_strategy.BusySpin,
+        waiting_strategy.BusySpin,
+    ).init(allocator, 120));
+}
+
+test "DuplicateStart" {
+    const allocator = std.testing.allocator;
+
+    const handlers = [_]*const fn (usize) void{
+        Recorder(9).handle,
+    };
+
+    var eb = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        waiting_strategy.BusySpin,
+        waiting_strategy.BusySpin,
+    ).init(allocator, 1024);
+    defer eb.deinit();
+
+    try eb.start();
+    defer eb.stop() catch {};
+
+    try std.testing.expectError(error.BusRunning, eb.start());
+}
+
+test "start and stop require lifecycle owner" {
+    const allocator = std.testing.allocator;
+    const handlers = [_]*const fn (usize) void{
+        Recorder(9).handle,
+    };
+
+    var bus = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        waiting_strategy.BusySpin,
+        waiting_strategy.BusySpin,
+    ).init(allocator, 1024);
+    defer bus.deinit();
+
+    const worker = struct {
+        fn run(eb: *@TypeOf(bus), result: *?anyerror, start_bus: bool) void {
+            const operation = if (start_bus) eb.start() else eb.stop();
+            operation catch |err| {
+                result.* = err;
+            };
+        }
+    };
+
+    var result: ?anyerror = null;
+    var thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, true });
+    thread.join();
+    try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
+
+    try bus.start();
+    defer bus.stop() catch {};
+
+    result = null;
+    thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, false });
+    thread.join();
+    try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
+}
+
+test "single producer tests" {
+    const allocator = std.testing.allocator;
+
+    const recorders = [_]type{ Recorder(2), Recorder(3), Recorder(4), Recorder(5) };
+    const handlers: [4]*const fn (usize) void = .{
+        recorders[0].handle,
+        recorders[1].handle,
+        recorders[2].handle,
+        recorders[3].handle,
+    };
+    inline for (recorders) |recorder| recorder.reset();
+
+    var bus = try RingBufferEventBus(
+        usize,
+        false,
+        &handlers,
+        waiting_strategy.BusySpin,
+        waiting_strategy.BusySpin,
+    ).init(allocator, 8);
+    defer bus.deinit();
+
+    try std.testing.expect(bus.state.load(.acquire) == .idle);
+
+    try bus.start();
+
+    try std.testing.expect(bus.state.load(.acquire) == .running);
+
+    for (0..10) |i| {
+        try bus.produce(i);
+    }
+
+    try std.testing.expect(bus.state.load(.acquire) == .running);
+    try bus.stop();
+
+    try std.testing.expect(bus.state.load(.acquire) == .idle);
+
+    inline for (recorders) |recorder| try recorder.expectRange(0, 10);
+}
+
 const capacity = 8;
 const event_count = 512;
 
@@ -41,11 +165,11 @@ fn Recorder(comptime id: usize) type {
 
 const First = Recorder(0);
 const Second = Recorder(1);
-const handlers = [_]*const fn (usize) void{ First.handle, Second.handle };
+const concurrent_handlers = [_]*const fn (usize) void{ First.handle, Second.handle };
 const Bus = RingBufferEventBus(
     usize,
     false,
-    &handlers,
+    &concurrent_handlers,
     waiting_strategy.BusySpin,
     waiting_strategy.BusySpin,
 );
@@ -108,7 +232,7 @@ test "publisher waits for a full buffer until handlers advance" {
     var attempting = std.atomic.Value(bool).init(false);
     var completed = std.atomic.Value(bool).init(false);
     const producer = try std.Thread.spawn(.{}, publishPastFullBuffer, .{ &bus, &attempting, &completed });
-    while (entered.load(.acquire) != handlers.len or !attempting.load(.acquire)) {
+    while (entered.load(.acquire) != concurrent_handlers.len or !attempting.load(.acquire)) {
         std.Thread.yield() catch {};
     }
 
@@ -143,7 +267,7 @@ test "stop drains queued events from paused handlers and restart preserves seque
 
     const producer = try std.Thread.spawn(.{}, publish, .{ &bus, @as(usize, 0), capacity });
     producer.join();
-    while (entered.load(.acquire) != handlers.len) std.Thread.yield() catch {};
+    while (entered.load(.acquire) != concurrent_handlers.len) std.Thread.yield() catch {};
 
     const releaser = try std.Thread.spawn(.{}, releaseWhenDraining, .{ &bus, &gate });
     try bus.stop();
