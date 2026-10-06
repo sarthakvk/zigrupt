@@ -16,34 +16,23 @@ pub fn build(b: *std.Build) void {
         .target = target,
     }) });
 
-    const tests = b.addTest(.{ .root_module = b.createModule(.{
-        .root_source_file = b.path("test/disruptor.zig"),
-        .optimize = optimize,
-        .target = target,
-    }) });
-    tests.root_module.addImport("zigrupt", zigrupt);
-
-    const source_tests = b.addTest(.{ .root_module = zigrupt });
-
-    const ring_buffer_tests = b.addTest(.{ .root_module = b.createModule(.{
-        .root_source_file = b.path("test/ring_buffer_single_producer.zig"),
-        .optimize = optimize,
-        .target = target,
-    }) });
-    ring_buffer_tests.root_module.addImport("zigrupt", zigrupt);
-
-    const waiting_strategy_tests = b.addTest(.{ .root_module = b.createModule(.{
-        .root_source_file = b.path("test/waiting_strategy.zig"),
-        .optimize = optimize,
-        .target = target,
-    }) });
-    waiting_strategy_tests.root_module.addImport("zigrupt", zigrupt);
-
     const test_step = b.step("test", "Run all tests");
-    test_step.dependOn(&b.addRunArtifact(tests).step);
-    test_step.dependOn(&b.addRunArtifact(source_tests).step);
-    test_step.dependOn(&b.addRunArtifact(ring_buffer_tests).step);
-    test_step.dependOn(&b.addRunArtifact(waiting_strategy_tests).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = zigrupt })).step);
+
+    var test_dir = b.build_root.handle.openDir(b.graph.io, "test", .{ .iterate = true }) catch @panic("cannot open test directory");
+    defer test_dir.close(b.graph.io);
+    var test_files = test_dir.iterate();
+    while (test_files.next(b.graph.io) catch @panic("cannot iterate test directory")) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".zig")) continue;
+
+        const tests = b.addTest(.{ .root_module = b.createModule(.{
+            .root_source_file = b.path(b.pathJoin(&.{ "test", entry.name })),
+            .optimize = optimize,
+            .target = target,
+        }) });
+        tests.root_module.addImport("zigrupt", zigrupt);
+        test_step.dependOn(&b.addRunArtifact(tests).step);
+    }
 
     bench_exe.root_module.addImport("zigrupt", zigrupt);
 
