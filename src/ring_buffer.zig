@@ -45,6 +45,7 @@ pub fn RingBufferEventBus(
         buffer_seq: []atomic.Value(usize),
         cursor: *PaddedSeq,
         consumer_seq: []PaddedSeq,
+        safe_to_write_through: *PaddedSeq,
         mask: usize,
         state: atomic.Value(EventBusState),
 
@@ -73,6 +74,10 @@ pub fn RingBufferEventBus(
             errdefer allocator.free(consumer_seq);
             @memset(consumer_seq, .{ .value = .init(1) });
 
+            const safe_to_write_through = try allocator.create(PaddedSeq);
+            errdefer allocator.destroy(safe_to_write_through);
+            safe_to_write_through.value = .init(buffer_size);
+
             const threads = try allocator.alloc(?std.Thread, event_handlers.len);
             errdefer allocator.free(threads);
             @memset(threads, null);
@@ -82,6 +87,7 @@ pub fn RingBufferEventBus(
                 .buffer_seq = buffer_seq,
                 .cursor = cursor,
                 .consumer_seq = consumer_seq,
+                .safe_to_write_through = safe_to_write_through,
                 .mask = (buffer_size - 1),
                 .state = .init(.idle),
                 .threads = threads,
@@ -95,6 +101,7 @@ pub fn RingBufferEventBus(
             self.allocator.free(self.buffer_seq);
             self.allocator.free(self.consumer_seq);
             self.allocator.destroy(self.cursor);
+            self.allocator.destroy(self.safe_to_write_through);
             self.allocator.free(self.threads);
         }
 
@@ -264,21 +271,26 @@ pub fn RingBufferEventBus(
             self.buffer_seq[buffer_idx].store(claimed_seq, .release);
         }
 
-        fn isSlotSafeToWrite(self: *Self, seq: usize) bool {
-            // Here we check that the slowest consumer sequence is strictly
-            // greater than `seq - buffer_size`, for the reasons as follows
-            //
-            // We want to make sure that the slot is safe is write i.e
-            // All the consumers have consumed the data from the slot as well as
-            // no other publisher have acquire the slot but haven't  released it yet.
-            for (0..self.consumer_seq.len) |c| {
-                const c_seq = &self.consumer_seq[c];
-                const consumed_till = c_seq.value.load(.acquire);
-                if (consumed_till <= std.math.sub(usize, seq, self.buffer.len) catch 0) {
-                    return false;
-                }
+        pub fn isSlotSafeToWrite(self: *Self, seq: usize) bool {
+            // Cache hits skip acquiring consumer_seq. Acquire the refreshing
+            // producer's release instead, ordering the consumers' buffer reads
+            // before this producer's overwrite. Stale limits are conservative,
+            // but a monotonic load would not establish that cross-thread ordering.
+            if (seq <= self.safe_to_write_through.value.load(.acquire)) return true;
+
+            var slowest_consumer_seq: usize = std.math.maxInt(usize);
+            for (self.consumer_seq) |*consumer| {
+                slowest_consumer_seq = @min(slowest_consumer_seq, consumer.value.load(.acquire));
             }
-            return true;
+
+            // Consumers point to the next event. Saturate for the sequence upper
+            // bound and for an empty consumer set, which imposes no limit.
+            const safe_to_write_through = slowest_consumer_seq +| (self.buffer.len - 1);
+            // Release publishes the ordering acquired from consumer_seq to other
+            // producers. An older scan may lower the limit, but consumer sequences
+            // only advance, so this can delay reuse without making it unsafe.
+            self.safe_to_write_through.value.store(safe_to_write_through, .release);
+            return seq <= safe_to_write_through;
         }
     };
 }
