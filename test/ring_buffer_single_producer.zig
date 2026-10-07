@@ -1,6 +1,8 @@
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
+const Gate = @import("support/synchronization.zig").Gate;
+const Counter = @import("support/synchronization.zig").Counter;
 
 test "Ring buffer init" {
     const allocator = std.testing.allocator;
@@ -133,8 +135,8 @@ fn Recorder(comptime id: usize) type {
     return struct {
         var values: [event_count]usize = undefined;
         var count: usize = 0;
-        var gate: ?*std.atomic.Value(bool) = null;
-        var entered: ?*std.atomic.Value(usize) = null;
+        var gate: ?*Gate = null;
+        var entered: ?*Counter = null;
         var unique_id = id;
 
         fn reset() void {
@@ -146,8 +148,8 @@ fn Recorder(comptime id: usize) type {
         fn handle(value: usize) void {
             if (count == 0) {
                 if (entered) |signal| {
-                    _ = signal.fetchAdd(1, .release);
-                    while (!gate.?.load(.acquire)) std.Thread.yield() catch {};
+                    signal.increment();
+                    gate.?.wait();
                 }
             }
             values[count] = value;
@@ -206,20 +208,20 @@ test "concurrent producer and two handlers preserve order across wraps" {
 
 fn publishPastFullBuffer(
     bus: *Bus,
-    attempting: *std.atomic.Value(bool),
-    completed: *std.atomic.Value(bool),
+    attempting: *Gate,
+    completed: *Counter,
 ) void {
     for (0..capacity) |value| bus.produce(value) catch unreachable;
-    attempting.store(true, .release);
+    attempting.open();
     bus.produce(capacity) catch unreachable;
-    completed.store(true, .release);
+    completed.increment();
 }
 
 test "publisher waits for a full buffer until handlers advance" {
     First.reset();
     Second.reset();
-    var gate = std.atomic.Value(bool).init(false);
-    var entered = std.atomic.Value(usize).init(0);
+    var gate: Gate = .{};
+    var entered: Counter = .{};
     First.gate = &gate;
     Second.gate = &gate;
     First.entered = &entered;
@@ -229,33 +231,32 @@ test "publisher waits for a full buffer until handlers advance" {
     defer bus.deinit();
     try bus.start();
 
-    var attempting = std.atomic.Value(bool).init(false);
-    var completed = std.atomic.Value(bool).init(false);
+    var attempting: Gate = .{};
+    var completed: Counter = .{};
     const producer = try std.Thread.spawn(.{}, publishPastFullBuffer, .{ &bus, &attempting, &completed });
-    while (entered.load(.acquire) != concurrent_handlers.len or !attempting.load(.acquire)) {
-        std.Thread.yield() catch {};
-    }
+    entered.waitFor(concurrent_handlers.len);
+    attempting.wait();
 
-    const completed_while_full = completed.load(.acquire);
-    gate.store(true, .release);
+    const completed_while_full = completed.get();
+    gate.open();
     producer.join();
     try bus.stop();
 
-    try std.testing.expect(!completed_while_full);
+    try std.testing.expectEqual(0, completed_while_full);
     try First.expectRange(0, capacity + 1);
     try Second.expectRange(0, capacity + 1);
 }
 
-fn releaseWhenDraining(bus: *Bus, gate: *std.atomic.Value(bool)) void {
+fn releaseWhenDraining(bus: *Bus, gate: *Gate) void {
     while (bus.state.load(.acquire) != .draining) std.Thread.yield() catch {};
-    gate.store(true, .release);
+    gate.open();
 }
 
 test "stop drains queued events from paused handlers and restart preserves sequences" {
     First.reset();
     Second.reset();
-    var gate = std.atomic.Value(bool).init(false);
-    var entered = std.atomic.Value(usize).init(0);
+    var gate: Gate = .{};
+    var entered: Counter = .{};
     First.gate = &gate;
     Second.gate = &gate;
     First.entered = &entered;
@@ -267,7 +268,7 @@ test "stop drains queued events from paused handlers and restart preserves seque
 
     const producer = try std.Thread.spawn(.{}, publish, .{ &bus, @as(usize, 0), capacity });
     producer.join();
-    while (entered.load(.acquire) != concurrent_handlers.len) std.Thread.yield() catch {};
+    entered.waitFor(concurrent_handlers.len);
 
     const releaser = try std.Thread.spawn(.{}, releaseWhenDraining, .{ &bus, &gate });
     try bus.stop();
