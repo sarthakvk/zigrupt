@@ -28,6 +28,16 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = zigrupt })).step);
 
+    const bench_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("bench/ring_buffer.zig"),
+        .optimize = optimize,
+        .target = target,
+    }) });
+    bench_tests.root_module.addImport("zigrupt", zigrupt);
+    const run_bench_tests = b.addRunArtifact(bench_tests);
+    b.step("test-bench", "Test benchmark timing, storage, and configuration").dependOn(&run_bench_tests.step);
+    test_step.dependOn(&run_bench_tests.step);
+
     var test_dir = b.build_root.handle.openDir(b.graph.io, "test", .{ .iterate = true }) catch @panic("cannot open test directory");
     defer test_dir.close(b.graph.io);
     var test_files = test_dir.iterate();
