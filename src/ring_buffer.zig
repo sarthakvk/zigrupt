@@ -73,7 +73,6 @@ pub fn RingBufferEventBus(
             errdefer allocator.free(consumer_seq);
             @memset(consumer_seq, .{ .value = .init(1) });
 
-            // TODO: Clip the number of threads to cpu count?
             const threads = try allocator.alloc(?std.Thread, event_handlers.len);
             errdefer allocator.free(threads);
             @memset(threads, null);
@@ -238,9 +237,22 @@ pub fn RingBufferEventBus(
         }
 
         fn multi_producer_produce(self: *Self, event: T) !void {
-            _ = self;
-            _ = event;
-            @panic("todo!");
+            var seq = self.cursor.value.raw;
+
+            // claim a seq using CAS
+            while (self.cursor.value.cmpxchgWeak(seq, seq + 1, .monotonic, .monotonic)) |new_seq| {
+                seq = new_seq;
+            }
+
+            // wait until the slot is safe to write
+            while (!self.isSlotSafeToWrite(seq)) {
+                PublisherWaitingStrategy.wait();
+            }
+
+            // Finally store release the event
+            const seq_idx = seq & self.mask;
+            self.buffer[seq_idx] = event;
+            self.buffer_seq[seq_idx].store(seq, .release);
         }
 
         fn single_producer_produce(self: *Self, event: T) !void {
