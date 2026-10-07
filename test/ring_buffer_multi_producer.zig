@@ -3,155 +3,16 @@ const RingBufferEventBus = @import("zigrupt").EventBus;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
 const Counter = @import("support/synchronization.zig").Counter;
-
-test "MultiProducer Ring buffer init" {
-    const allocator = std.testing.allocator;
-
-    const handlers = [_]*const fn (usize) void{
-        Recorder(9).handle,
-    };
-
-    var eb = try RingBufferEventBus(
-        usize,
-        true,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 1024);
-    defer eb.deinit();
-
-    try std.testing.expectError(error.IncorrectBufferSize, RingBufferEventBus(
-        usize,
-        true,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 120));
-}
-
-test "MultiProducer DuplicateStart" {
-    const allocator = std.testing.allocator;
-
-    const handlers = [_]*const fn (usize) void{
-        Recorder(9).handle,
-    };
-
-    var eb = try RingBufferEventBus(
-        usize,
-        true,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 1024);
-    defer eb.deinit();
-
-    try eb.start();
-    defer eb.stop() catch {};
-
-    try std.testing.expectError(error.BusRunning, eb.start());
-}
-
-test "MultiProducer start and stop require lifecycle owner" {
-    const allocator = std.testing.allocator;
-    const handlers = [_]*const fn (usize) void{
-        Recorder(9).handle,
-    };
-
-    var bus = try RingBufferEventBus(
-        usize,
-        true,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 1024);
-    defer bus.deinit();
-
-    const worker = struct {
-        fn run(eb: *@TypeOf(bus), result: *?anyerror, start_bus: bool) void {
-            const operation = if (start_bus) eb.start() else eb.stop();
-            operation catch |err| {
-                result.* = err;
-            };
-        }
-    };
-
-    var result: ?anyerror = null;
-    var thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, true });
-    thread.join();
-    try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
-
-    try bus.start();
-    defer bus.stop() catch {};
-
-    result = null;
-    thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, false });
-    thread.join();
-    try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
-}
+const Recorder = @import("support/utils.zig").Recorder;
+const releaseWhenDraining = @import("support/utils.zig").releaseWhenDraining;
 
 const capacity = 8;
 const producer_count = 4;
 const events_per_producer = 128;
 const event_count = producer_count * events_per_producer;
 
-/// Each id gives a handler its own recording state. Only that handler writes it;
-/// the test reads the recorded values after stop() has joined the handlers.
-fn Recorder(comptime id: usize) type {
-    return struct {
-        var values: [event_count]usize = undefined;
-        var count: usize = 0;
-        var gate: ?*Gate = null;
-        var entered: ?*Counter = null;
-        var unique_id = id;
-
-        fn reset() void {
-            count = 0;
-            gate = null;
-            entered = null;
-        }
-
-        fn handle(value: usize) void {
-            // Paused-handler tests stop at the first event, before the bus can
-            // advance this consumer's sequence. Signal once per handler, not
-            // per event, so `entered` counts handlers that reached the gate.
-            if (count == 0) {
-                if (entered) |signal| {
-                    signal.increment();
-                    gate.?.wait();
-                }
-            }
-            // Count excess deliveries so assertions fail without overrunning storage.
-            if (count < values.len) values[count] = value;
-            count += 1;
-        }
-
-        fn expectRange(start: usize, len: usize) !void {
-            try std.testing.expectEqual(len, count);
-            for (values[0..len], start..) |value, expected| {
-                try std.testing.expectEqual(expected, value);
-            }
-        }
-
-        fn expectProduced(start: usize, len: usize) !void {
-            try std.testing.expectEqual(producer_count * len, count);
-            var next: [producer_count]usize = @splat(start);
-            // Each producer uses a disjoint value range encoding its id and offset.
-            for (values[0..count]) |value| {
-                const producer_id = value / events_per_producer;
-                const offset = value % events_per_producer;
-                try std.testing.expect(producer_id < producer_count);
-                // Each producer's stream is ordered and delivered exactly once;
-                // the interleaving between different producers is unspecified.
-                try std.testing.expectEqual(next[producer_id], offset);
-                next[producer_id] += 1;
-            }
-            for (next) |offset| try std.testing.expectEqual(start + len, offset);
-        }
-    };
-}
-
-const First = Recorder(0);
-const Second = Recorder(1);
+const First = Recorder(0, event_count);
+const Second = Recorder(1, event_count);
 const concurrent_handlers = [_]*const fn (usize) void{ First.handle, Second.handle };
 const Bus = RingBufferEventBus(
     usize,
@@ -204,8 +65,21 @@ const Producers = struct {
 };
 
 fn expectProduced(start: usize, len: usize) !void {
-    try First.expectProduced(start, len);
-    try Second.expectProduced(start, len);
+    inline for (.{ First, Second }) |recorder| {
+        try std.testing.expectEqual(producer_count * len, recorder.count);
+        var next: [producer_count]usize = @splat(start);
+        // Each producer uses a disjoint value range encoding its id and offset.
+        for (recorder.values[0..recorder.count]) |value| {
+            const producer_id = value / events_per_producer;
+            const offset = value % events_per_producer;
+            try std.testing.expect(producer_id < producer_count);
+            // Each producer's stream is ordered and delivered exactly once;
+            // the interleaving between different producers is unspecified.
+            try std.testing.expectEqual(next[producer_id], offset);
+            next[producer_id] += 1;
+        }
+        for (next) |offset| try std.testing.expectEqual(start + len, offset);
+    }
     // Every handler must observe the same global sequence, whatever its order.
     try std.testing.expectEqualSlices(usize, First.values[0..First.count], Second.values[0..Second.count]);
 }
@@ -375,13 +249,6 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
     for (sequences_at_gap) |sequence| try std.testing.expectEqual(capacity + 1, sequence);
     try First.expectRange(0, capacity + 2);
     try Second.expectRange(0, capacity + 2);
-}
-
-// stop() blocks on the paused handlers, so another thread releases them only
-// after draining begins. This ensures stop(), not normal consumption, drains the queue.
-fn releaseWhenDraining(bus: *Bus, gate: *Gate) void {
-    while (bus.state.load(.acquire) != .draining) std.Thread.yield() catch {};
-    gate.open();
 }
 
 test "MultiProducer stop drains all producers and restart preserves sequences" {

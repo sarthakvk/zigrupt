@@ -3,96 +3,13 @@ const RingBufferEventBus = @import("zigrupt").EventBus;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
 const Counter = @import("support/synchronization.zig").Counter;
-
-test "Ring buffer init" {
-    const allocator = std.testing.allocator;
-
-    const handlers = [_]*const fn (usize) void{
-        Recorder(9).handle,
-    };
-
-    var eb = try RingBufferEventBus(
-        usize,
-        false,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 1024);
-    defer eb.deinit();
-
-    try std.testing.expectError(error.IncorrectBufferSize, RingBufferEventBus(
-        usize,
-        false,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 120));
-}
-
-test "DuplicateStart" {
-    const allocator = std.testing.allocator;
-
-    const handlers = [_]*const fn (usize) void{
-        Recorder(9).handle,
-    };
-
-    var eb = try RingBufferEventBus(
-        usize,
-        false,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 1024);
-    defer eb.deinit();
-
-    try eb.start();
-    defer eb.stop() catch {};
-
-    try std.testing.expectError(error.BusRunning, eb.start());
-}
-
-test "start and stop require lifecycle owner" {
-    const allocator = std.testing.allocator;
-    const handlers = [_]*const fn (usize) void{
-        Recorder(9).handle,
-    };
-
-    var bus = try RingBufferEventBus(
-        usize,
-        false,
-        &handlers,
-        waiting_strategy.BusySpin,
-        waiting_strategy.BusySpin,
-    ).init(allocator, 1024);
-    defer bus.deinit();
-
-    const worker = struct {
-        fn run(eb: *@TypeOf(bus), result: *?anyerror, start_bus: bool) void {
-            const operation = if (start_bus) eb.start() else eb.stop();
-            operation catch |err| {
-                result.* = err;
-            };
-        }
-    };
-
-    var result: ?anyerror = null;
-    var thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, true });
-    thread.join();
-    try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
-
-    try bus.start();
-    defer bus.stop() catch {};
-
-    result = null;
-    thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, false });
-    thread.join();
-    try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
-}
+const Recorder = @import("support/utils.zig").Recorder;
+const releaseWhenDraining = @import("support/utils.zig").releaseWhenDraining;
 
 test "single producer tests" {
     const allocator = std.testing.allocator;
 
-    const recorders = [_]type{ Recorder(2), Recorder(3), Recorder(4), Recorder(5) };
+    const recorders = [_]type{ Recorder(2, event_count), Recorder(3, event_count), Recorder(4, event_count), Recorder(5, event_count) };
     const handlers: [4]*const fn (usize) void = .{
         recorders[0].handle,
         recorders[1].handle,
@@ -131,47 +48,8 @@ test "single producer tests" {
 const capacity = 8;
 const event_count = 512;
 
-/// Each id gives a handler its own recording state. Only that handler writes it;
-/// the test reads the recorded values after stop() has joined the handlers.
-fn Recorder(comptime id: usize) type {
-    return struct {
-        var values: [event_count]usize = undefined;
-        var count: usize = 0;
-        var gate: ?*Gate = null;
-        var entered: ?*Counter = null;
-        var unique_id = id;
-
-        fn reset() void {
-            count = 0;
-            gate = null;
-            entered = null;
-        }
-
-        fn handle(value: usize) void {
-            // Paused-handler tests stop at the first event, before the bus can
-            // advance this consumer's sequence. Signal once per handler, not
-            // per event, so `entered` counts handlers that reached the gate.
-            if (count == 0) {
-                if (entered) |signal| {
-                    signal.increment();
-                    gate.?.wait();
-                }
-            }
-            values[count] = value;
-            count += 1;
-        }
-
-        fn expectRange(start: usize, len: usize) !void {
-            try std.testing.expectEqual(len, count);
-            for (values[0..len], start..) |value, expected| {
-                try std.testing.expectEqual(expected, value);
-            }
-        }
-    };
-}
-
-const First = Recorder(0);
-const Second = Recorder(1);
+const First = Recorder(0, event_count);
+const Second = Recorder(1, event_count);
 const concurrent_handlers = [_]*const fn (usize) void{ First.handle, Second.handle };
 const Bus = RingBufferEventBus(
     usize,
@@ -251,13 +129,6 @@ test "publisher waits for a full buffer until handlers advance" {
     try std.testing.expectEqual(0, completed_while_full);
     try First.expectRange(0, capacity + 1);
     try Second.expectRange(0, capacity + 1);
-}
-
-// stop() blocks on the paused handlers, so another thread releases them only
-// after draining begins. This ensures stop(), not normal consumption, drains the queue.
-fn releaseWhenDraining(bus: *Bus, gate: *Gate) void {
-    while (bus.state.load(.acquire) != .draining) std.Thread.yield() catch {};
-    gate.open();
 }
 
 test "stop drains queued events from paused handlers and restart preserves sequences" {
