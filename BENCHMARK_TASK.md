@@ -69,4 +69,15 @@ Keep throughput and latency measurements separate so timestamping does not disto
 
 **The ambition is to beat all three on applicable workloads. Completing this task means establishing trustworthy results, not manufacturing a win.**
 
-Research completed; no benchmarks have been run.
+## Status — 2026-10-07
+
+Suite, optional devbox toolchains, specification, tests, raw results, and reports are in
+[`benchmarks/`](benchmarks/README.md). The recorded baseline has **56 passing correctness
+cases, 140 throughput samples, and 280 latency samples**, with no delivery-invalid runs.
+See the [comparison report](benchmarks/results/baseline/REPORT.md) and
+[findings / ranked follow-ups](benchmarks/FINDINGS.md).
+
+**Full performance coverage remains blocked:** this host has four physical cores;
+4→1 and 3→3 require five and six respectively. Six measured Java cells also retain
+explicitly inconclusive rankings because compilation activity was recorded despite
+warmup. These limitations are not replaced with oversubscribed results or claimed wins.

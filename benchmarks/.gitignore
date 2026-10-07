@@ -1,0 +1,9 @@
+.devbox/
+.venv/
+.ipynb_checkpoints/
+.deps/
+.bin/
+.zig-cache/
+__pycache__/
+rust/target/
+results/smoke*/
