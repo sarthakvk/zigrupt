@@ -94,6 +94,8 @@ const producer_count = 4;
 const events_per_producer = 128;
 const event_count = producer_count * events_per_producer;
 
+/// Each id gives a handler its own recording state. Only that handler writes it;
+/// the test reads the recorded values after stop() has joined the handlers.
 fn Recorder(comptime id: usize) type {
     return struct {
         var values: [event_count]usize = undefined;
@@ -109,12 +111,16 @@ fn Recorder(comptime id: usize) type {
         }
 
         fn handle(value: usize) void {
+            // Paused-handler tests stop at the first event, before the bus can
+            // advance this consumer's sequence. Signal once per handler, not
+            // per event, so `entered` counts handlers that reached the gate.
             if (count == 0) {
                 if (entered) |signal| {
                     signal.increment();
                     gate.?.wait();
                 }
             }
+            // Count excess deliveries so assertions fail without overrunning storage.
             if (count < values.len) values[count] = value;
             count += 1;
         }
@@ -129,6 +135,7 @@ fn Recorder(comptime id: usize) type {
         fn expectProduced(start: usize, len: usize) !void {
             try std.testing.expectEqual(producer_count * len, count);
             var next: [producer_count]usize = @splat(start);
+            // Each producer uses a disjoint value range encoding its id and offset.
             for (values[0..count]) |value| {
                 const producer_id = value / events_per_producer;
                 const offset = value % events_per_producer;
@@ -164,6 +171,7 @@ const Producers = struct {
 
     fn start(self: *Producers, bus: *Bus, start_offset: usize, len: usize) !void {
         errdefer {
+            // A partial spawn failure must release waiting producers without publishing.
             self.cancelled = true;
             self.gate.open();
             self.join();
@@ -263,9 +271,11 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
         producers.join();
     }
     // Wait for actual claims, not just a signal sent before calling produce.
+    // Sequences start at 1, and the cursor points to the next unclaimed sequence.
     while (bus.cursor.value.load(.acquire) < capacity + producer_count + 1) std.Thread.yield() catch {};
     const completed_while_full = producers.completed.get();
 
+    // Advancing only the first handler must not free slots still held by the second.
     first_gate.open();
     while (bus.consumer_seq[0].value.load(.acquire) < capacity + 1) std.Thread.yield() catch {};
     const completed_with_slow_handler = producers.completed.get();
@@ -346,6 +356,8 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
         PausedPublisher.entered.wait();
 
         const later = try std.Thread.spawn(.{}, PausedPublisher.publish, .{ &bus, capacity + 1, false });
+        // Let consumers free slots, but keep the earlier producer paused so the
+        // later publication leaves a gap that consumers must not skip.
         gate.open();
         later.join();
 
@@ -365,6 +377,8 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
     try Second.expectRange(0, capacity + 2);
 }
 
+// stop() blocks on the paused handlers, so another thread releases them only
+// after draining begins. This ensures stop(), not normal consumption, drains the queue.
 fn releaseWhenDraining(bus: *Bus, gate: *Gate) void {
     while (bus.state.load(.acquire) != .draining) std.Thread.yield() catch {};
     gate.open();

@@ -131,6 +131,8 @@ test "single producer tests" {
 const capacity = 8;
 const event_count = 512;
 
+/// Each id gives a handler its own recording state. Only that handler writes it;
+/// the test reads the recorded values after stop() has joined the handlers.
 fn Recorder(comptime id: usize) type {
     return struct {
         var values: [event_count]usize = undefined;
@@ -146,6 +148,9 @@ fn Recorder(comptime id: usize) type {
         }
 
         fn handle(value: usize) void {
+            // Paused-handler tests stop at the first event, before the bus can
+            // advance this consumer's sequence. Signal once per handler, not
+            // per event, so `entered` counts handlers that reached the gate.
             if (count == 0) {
                 if (entered) |signal| {
                     signal.increment();
@@ -178,8 +183,8 @@ const Bus = RingBufferEventBus(
 
 fn publish(bus: *Bus, start: usize, len: usize) void {
     for (start..start + len) |value| {
-        // Respect the documented full-buffer precondition: wait until every
-        // handler has finished with the slot before publishing its replacement.
+        // Keep the order/wrap test from exercising backpressure: wait for every
+        // handler to finish with the slot. The full-buffer test bypasses this helper.
         if (value >= capacity) {
             for (bus.consumer_seq) |*consumer| {
                 while (consumer.value.load(.acquire) <= value + 1 - capacity) {
@@ -212,6 +217,7 @@ fn publishPastFullBuffer(
     completed: *Counter,
 ) void {
     for (0..capacity) |value| bus.produce(value) catch unreachable;
+    // Signal before the extra publication, which cannot finish while handlers are paused.
     attempting.open();
     bus.produce(capacity) catch unreachable;
     completed.increment();
@@ -247,6 +253,8 @@ test "publisher waits for a full buffer until handlers advance" {
     try Second.expectRange(0, capacity + 1);
 }
 
+// stop() blocks on the paused handlers, so another thread releases them only
+// after draining begins. This ensures stop(), not normal consumption, drains the queue.
 fn releaseWhenDraining(bus: *Bus, gate: *Gate) void {
     while (bus.state.load(.acquire) != .draining) std.Thread.yield() catch {};
     gate.open();
