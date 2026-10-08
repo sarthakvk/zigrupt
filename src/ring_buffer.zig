@@ -321,8 +321,17 @@ pub fn RingBufferEventBus(
 
                 if (buffer_seq == 0 or c_seq > buffer_seq) break;
 
-                const batch_size = @min(self.max_batch_size, cursor - c_seq + 1);
-                const events_slice = self.buffer[(c_seq & self.mask)..][0..batch_size];
+                const index = c_seq & self.mask;
+                const limit = @min(self.max_batch_size, self.buffer.len - index, cursor - c_seq);
+                var batch_size: usize = 1;
+
+                while (batch_size < limit) : (batch_size += 1) {
+                    const expected = c_seq + batch_size;
+                    const published = self.buffer_seq[index + batch_size].load(.acquire);
+                    if (published != expected) break;
+                }
+
+                const events_slice = self.buffer[index..][0..batch_size];
 
                 c_seq += handler(events_slice);
                 self.consumer_seq[handler_id].value.store(c_seq, .release);
