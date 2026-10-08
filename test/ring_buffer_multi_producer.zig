@@ -104,7 +104,7 @@ test "MultiProducer concurrent producers deliver exactly once across wraps" {
         try std.testing.expectEqual(.running, bus.state.load(.acquire));
         try bus.stop();
         try std.testing.expectEqual(.idle, bus.state.load(.acquire));
-        try std.testing.expectEqual(event_count + 1, bus.cursor.value.load(.acquire));
+        try std.testing.expectEqual(event_count + 1, bus.sequencer.current());
         try expectProduced(0, events_per_producer);
     }
 }
@@ -146,7 +146,7 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
     }
     // Wait for actual claims, not just a signal sent before calling produce.
     // Sequences start at 1, and the cursor points to the next unclaimed sequence.
-    while (bus.cursor.value.load(.acquire) < capacity + producer_count + 1) std.Thread.yield() catch {};
+    while (bus.sequencer.current() < capacity + producer_count + 1) std.Thread.yield() catch {};
     const completed_while_full = producers.completed.get();
 
     // Advancing only the first handler must not free slots still held by the second.
@@ -279,7 +279,7 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     try bus.stop();
     releaser.join();
     try expectProduced(0, batch_per_producer);
-    try std.testing.expectEqual(capacity + 1, bus.cursor.value.load(.acquire));
+    try std.testing.expectEqual(capacity + 1, bus.sequencer.current());
 
     // Keep the recorded events and sequences to detect replays after restart.
     First.entered = null;
@@ -289,6 +289,6 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     try next_producers.start(&bus, batch_per_producer, batch_per_producer);
     next_producers.join();
     try bus.stop();
-    try std.testing.expectEqual(2 * capacity + 1, bus.cursor.value.load(.acquire));
+    try std.testing.expectEqual(2 * capacity + 1, bus.sequencer.current());
     try expectProduced(0, 2 * batch_per_producer);
 }

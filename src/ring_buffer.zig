@@ -8,7 +8,7 @@ const waiting_strategy = @import("waiting_strategy.zig");
 
 const mem = std.mem;
 
-const PaddedSeq = struct {
+const PaddedAtomicSeq = struct {
     value: std.atomic.Value(usize) align(std.atomic.cache_line),
 };
 
@@ -30,6 +30,105 @@ pub const EventBusState = enum(u8) {
     draining,
 };
 
+const SingleProducerSequencer = struct {
+    next: PaddedAtomicSeq,
+    safe_to_write_through: usize align(std.atomic.cache_line),
+    buffer_size: usize,
+
+    const Self = @This();
+
+    pub fn init(buffer_size: usize) Self {
+        return .{
+            .next = .{ .value = .init(1) },
+            .safe_to_write_through = buffer_size,
+            .buffer_size = buffer_size,
+        };
+    }
+
+    pub fn claim(self: *Self) usize {
+        const seq = self.next.value.load(.monotonic);
+        self.next.value.store(seq + 1, .release);
+        return seq;
+    }
+
+    pub fn current(self: *Self) usize {
+        return self.next.value.load(.acquire);
+    }
+
+    pub fn isSlotSafeToWrite(self: *Self, seq: usize, consumer_seq: []PaddedAtomicSeq) bool {
+        if (seq <= self.safe_to_write_through) return true;
+
+        var slowest_consumer_seq: usize = std.math.maxInt(usize);
+
+        for (consumer_seq) |*cseq| {
+            slowest_consumer_seq = @min(slowest_consumer_seq, cseq.value.load(.acquire));
+        }
+        self.safe_to_write_through = slowest_consumer_seq +| (self.buffer_size - 1);
+
+        return seq <= self.safe_to_write_through;
+    }
+};
+
+const MultiProducerSequencer = struct {
+    next: PaddedAtomicSeq,
+    safe_to_write_through: PaddedAtomicSeq,
+    buffer_size: usize,
+
+    const Self = @This();
+
+    pub fn init(buffer_size: usize) Self {
+        return .{
+            .next = PaddedAtomicSeq{ .value = .init(1) },
+            .safe_to_write_through = PaddedAtomicSeq{ .value = .init(buffer_size) },
+            .buffer_size = buffer_size,
+        };
+    }
+
+    pub fn claim(self: *Self) usize {
+        var seq = self.next.value.load(.monotonic);
+        while (self.next.value.cmpxchgWeak(seq, seq + 1, .monotonic, .monotonic)) |new_seq| {
+            seq = new_seq;
+        }
+        return seq;
+    }
+
+    pub fn current(self: *Self) usize {
+        return self.next.value.load(.acquire);
+    }
+
+    pub fn isSlotSafeToWrite(self: *Self, seq: usize, consumer_seq: []PaddedAtomicSeq) bool {
+        if (seq <= self.safe_to_write_through.value.load(.acquire)) return true;
+
+        var slowest_consumer_seq: usize = std.math.maxInt(usize);
+
+        for (consumer_seq) |*cseq| {
+            slowest_consumer_seq = @min(slowest_consumer_seq, cseq.value.load(.acquire));
+        }
+
+        var new = slowest_consumer_seq +| (self.buffer_size - 1);
+        var cur = self.safe_to_write_through.value.load(.acquire);
+
+        if (cur > new) return seq <= new;
+
+        // Do a compare and swap
+        // If the value changed concurrently, then keep the max one
+        while (self.safe_to_write_through.value.cmpxchgWeak(cur, new, .acq_rel, .acquire)) |updated| {
+            if (new > updated)
+                // new is the max, try CAS again
+                // with updated as current
+                cur = updated
+            else {
+                // concurrent update is max
+                // set new to the updated and break
+                new = updated;
+                break;
+            }
+        }
+
+        return seq <= new;
+    }
+};
+
 pub fn RingBufferEventBus(
     comptime T: type,
     multi_producer: bool,
@@ -40,15 +139,16 @@ pub fn RingBufferEventBus(
     waiting_strategy.validateWaitingStrategy(PublisherWaitingStrategy);
     waiting_strategy.validateWaitingStrategy(ConsumerWaitingStrategy);
 
+    const Sequencer = if (multi_producer) MultiProducerSequencer else SingleProducerSequencer;
+
     return struct {
         buffer: []T,
         buffer_seq: []atomic.Value(usize),
-        cursor: *PaddedSeq,
-        consumer_seq: []PaddedSeq,
-        safe_to_write_through: *PaddedSeq,
+        consumer_seq: []PaddedAtomicSeq,
         mask: usize,
         state: atomic.Value(EventBusState),
 
+        sequencer: Sequencer,
         threads: []?std.Thread,
         lifecycle_owner: std.Thread.Id,
         allocator: mem.Allocator,
@@ -66,17 +166,9 @@ pub fn RingBufferEventBus(
             errdefer allocator.free(buffer_seq);
             @memset(buffer_seq, .init(0));
 
-            const cursor = try allocator.create(PaddedSeq);
-            errdefer allocator.destroy(cursor);
-            cursor.value = .init(1);
-
-            const consumer_seq = try allocator.alloc(PaddedSeq, event_handlers.len);
+            const consumer_seq = try allocator.alloc(PaddedAtomicSeq, event_handlers.len);
             errdefer allocator.free(consumer_seq);
             @memset(consumer_seq, .{ .value = .init(1) });
-
-            const safe_to_write_through = try allocator.create(PaddedSeq);
-            errdefer allocator.destroy(safe_to_write_through);
-            safe_to_write_through.value = .init(buffer_size);
 
             const threads = try allocator.alloc(?std.Thread, event_handlers.len);
             errdefer allocator.free(threads);
@@ -85,11 +177,10 @@ pub fn RingBufferEventBus(
             return .{
                 .buffer = buffer,
                 .buffer_seq = buffer_seq,
-                .cursor = cursor,
                 .consumer_seq = consumer_seq,
-                .safe_to_write_through = safe_to_write_through,
                 .mask = (buffer_size - 1),
                 .state = .init(.idle),
+                .sequencer = Sequencer.init(buffer_size),
                 .threads = threads,
                 .lifecycle_owner = std.Thread.getCurrentId(),
                 .allocator = allocator,
@@ -100,8 +191,6 @@ pub fn RingBufferEventBus(
             self.allocator.free(self.buffer);
             self.allocator.free(self.buffer_seq);
             self.allocator.free(self.consumer_seq);
-            self.allocator.destroy(self.cursor);
-            self.allocator.destroy(self.safe_to_write_through);
             self.allocator.free(self.threads);
         }
 
@@ -202,7 +291,7 @@ pub fn RingBufferEventBus(
             // Cursor will always be the next available sequence
             // once the event handlers reach cursor, they've consumed
             // all the in-flight/queued events
-            const cursor = self.cursor.value.load(.monotonic);
+            const cursor = self.sequencer.current();
 
             while (c_seq < cursor) {
                 const buffer_seq = self.buffer_seq[(c_seq & self.mask)].load(.acquire);
@@ -230,29 +319,10 @@ pub fn RingBufferEventBus(
                 .running => {},
             }
 
-            // select producer strategy, this will be done at comptime, as the multi_producer is a comptime argument.
-            const produce_fn = if (multi_producer) Self.multi_producer_produce else Self.single_producer_produce;
-            try produce_fn(self, event);
-        }
-
-        fn ensureLifecycleOwner(self: *Self) !void {
-            if (!self.isLifecycleOwner()) return EventBusError.NotLifecycleOwner;
-        }
-
-        fn isLifecycleOwner(self: *Self) bool {
-            return self.lifecycle_owner == std.Thread.getCurrentId();
-        }
-
-        fn multi_producer_produce(self: *Self, event: T) !void {
-            var seq = self.cursor.value.raw;
-
-            // claim a seq using CAS
-            while (self.cursor.value.cmpxchgWeak(seq, seq + 1, .monotonic, .monotonic)) |new_seq| {
-                seq = new_seq;
-            }
+            const seq = self.sequencer.claim();
 
             // wait until the slot is safe to write
-            while (!self.isSlotSafeToWrite(seq)) {
+            while (!self.sequencer.isSlotSafeToWrite(seq, self.consumer_seq)) {
                 PublisherWaitingStrategy.wait();
             }
 
@@ -262,35 +332,12 @@ pub fn RingBufferEventBus(
             self.buffer_seq[seq_idx].store(seq, .release);
         }
 
-        fn single_producer_produce(self: *Self, event: T) !void {
-            const claimed_seq = self.cursor.value.fetchAdd(1, .monotonic);
-            const buffer_idx = (claimed_seq & self.mask);
-            while (!self.isSlotSafeToWrite(claimed_seq)) PublisherWaitingStrategy.wait();
-
-            self.buffer[buffer_idx] = event;
-            self.buffer_seq[buffer_idx].store(claimed_seq, .release);
+        fn ensureLifecycleOwner(self: *Self) !void {
+            if (!self.isLifecycleOwner()) return EventBusError.NotLifecycleOwner;
         }
 
-        pub fn isSlotSafeToWrite(self: *Self, seq: usize) bool {
-            // Cache hits skip acquiring consumer_seq. Acquire the refreshing
-            // producer's release instead, ordering the consumers' buffer reads
-            // before this producer's overwrite. Stale limits are conservative,
-            // but a monotonic load would not establish that cross-thread ordering.
-            if (seq <= self.safe_to_write_through.value.load(.acquire)) return true;
-
-            var slowest_consumer_seq: usize = std.math.maxInt(usize);
-            for (self.consumer_seq) |*consumer| {
-                slowest_consumer_seq = @min(slowest_consumer_seq, consumer.value.load(.acquire));
-            }
-
-            // Consumers point to the next event. Saturate for the sequence upper
-            // bound and for an empty consumer set, which imposes no limit.
-            const safe_to_write_through = slowest_consumer_seq +| (self.buffer.len - 1);
-            // Release publishes the ordering acquired from consumer_seq to other
-            // producers. An older scan may lower the limit, but consumer sequences
-            // only advance, so this can delay reuse without making it unsafe.
-            self.safe_to_write_through.value.store(safe_to_write_through, .release);
-            return seq <= safe_to_write_through;
+        fn isLifecycleOwner(self: *Self) bool {
+            return self.lifecycle_owner == std.Thread.getCurrentId();
         }
     };
 }
