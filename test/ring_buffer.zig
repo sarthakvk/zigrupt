@@ -88,25 +88,25 @@ test "write safety limit caches the slowest consumer's progress" {
             var bus = try Bus.init(std.testing.allocator, capacity);
             defer bus.deinit();
 
-            try std.testing.expectEqual(capacity, bus.safe_to_write_through.value.load(.acquire));
-            try std.testing.expect(bus.isSlotSafeToWrite(capacity));
-            try std.testing.expect(!bus.isSlotSafeToWrite(capacity + 1));
+            try std.testing.expectEqual(capacity, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity, bus.consumer_seq));
+            try std.testing.expect(!bus.sequencer.isSlotSafeToWrite(capacity + 1, bus.consumer_seq));
 
             bus.consumer_seq[0].value.store(5, .release);
-            try std.testing.expect(!bus.isSlotSafeToWrite(capacity + 1));
+            try std.testing.expect(!bus.sequencer.isSlotSafeToWrite(capacity + 1, bus.consumer_seq));
 
             bus.consumer_seq[1].value.store(3, .release);
-            try std.testing.expect(bus.isSlotSafeToWrite(capacity + 1));
-            try std.testing.expectEqual(capacity + 2, bus.safe_to_write_through.value.load(.acquire));
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity + 1, bus.consumer_seq));
+            try std.testing.expectEqual(capacity + 2, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
 
             bus.consumer_seq[1].value.store(7, .release);
-            try std.testing.expect(bus.isSlotSafeToWrite(capacity + 2));
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity + 2, bus.consumer_seq));
             // A cache hit must not refresh the limit even when consumers advanced.
-            try std.testing.expectEqual(capacity + 2, bus.safe_to_write_through.value.load(.acquire));
+            try std.testing.expectEqual(capacity + 2, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
 
-            try std.testing.expect(bus.isSlotSafeToWrite(capacity + 4));
-            try std.testing.expectEqual(capacity + 4, bus.safe_to_write_through.value.load(.acquire));
-            try std.testing.expect(!bus.isSlotSafeToWrite(capacity + 5));
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity + 4, bus.consumer_seq));
+            try std.testing.expectEqual(capacity + 4, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
+            try std.testing.expect(!bus.sequencer.isSlotSafeToWrite(capacity + 5, bus.consumer_seq));
         }
     }
 }
@@ -124,8 +124,8 @@ test "write safety limit handles no consumers and the sequence upper bound" {
             defer bus.deinit();
 
             for (bus.consumer_seq) |*consumer| consumer.value.store(std.math.maxInt(usize) - 1, .release);
-            try std.testing.expect(bus.isSlotSafeToWrite(std.math.maxInt(usize)));
-            try std.testing.expectEqual(std.math.maxInt(usize), bus.safe_to_write_through.value.load(.acquire));
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(std.math.maxInt(usize), bus.consumer_seq));
+            try std.testing.expectEqual(std.math.maxInt(usize), if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
         }
     }
 }
