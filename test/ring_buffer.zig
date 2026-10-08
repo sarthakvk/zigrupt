@@ -1,9 +1,10 @@
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Recorder = @import("support/utils.zig").Recorder;
 
-const handlers = [_]*const fn (usize) void{Recorder(0, 1).handle};
+const handlers = [_]EventHandler(usize){Recorder(0, 1).handle};
 
 test "Ring buffer init" {
     inline for (.{ false, true }) |multi_producer| {
@@ -14,10 +15,11 @@ test "Ring buffer init" {
             waiting_strategy.BusySpin,
             waiting_strategy.BusySpin,
         );
-        var bus = try Bus.init(std.testing.allocator, 1024);
+        var bus = try Bus.init(std.testing.allocator, 1024, 1);
         defer bus.deinit();
 
-        try std.testing.expectError(error.IncorrectBufferSize, Bus.init(std.testing.allocator, 120));
+        try std.testing.expectEqual(1, bus.max_batch_size);
+        try std.testing.expectError(error.IncorrectBufferSize, Bus.init(std.testing.allocator, 120, 1));
     }
 }
 
@@ -30,7 +32,7 @@ test "DuplicateStart" {
             waiting_strategy.BusySpin,
             waiting_strategy.BusySpin,
         );
-        var bus = try Bus.init(std.testing.allocator, 1024);
+        var bus = try Bus.init(std.testing.allocator, 1024, 1);
         defer bus.deinit();
 
         try bus.start();
@@ -49,7 +51,7 @@ test "start and stop require lifecycle owner" {
             waiting_strategy.BusySpin,
             waiting_strategy.BusySpin,
         );
-        var bus = try Bus.init(std.testing.allocator, 1024);
+        var bus = try Bus.init(std.testing.allocator, 1024, 1);
         defer bus.deinit();
 
         const worker = struct {
@@ -78,14 +80,16 @@ test "start and stop require lifecycle owner" {
 
 test "write safety limit caches the slowest consumer's progress" {
     const handler = struct {
-        fn handle(_: usize) void {}
+        fn handle(events: []const usize) usize {
+            return events.len;
+        }
     }.handle;
-    const test_handlers = [_]*const fn (usize) void{ handler, handler };
+    const test_handlers = [_]EventHandler(usize){ handler, handler };
 
     inline for (.{ false, true }) |multi_producer| {
         for ([_]usize{ 1, 8 }) |capacity| {
             const Bus = RingBufferEventBus(usize, multi_producer, &test_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
-            var bus = try Bus.init(std.testing.allocator, capacity);
+            var bus = try Bus.init(std.testing.allocator, capacity, 1);
             defer bus.deinit();
 
             try std.testing.expectEqual(capacity, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
@@ -113,14 +117,16 @@ test "write safety limit caches the slowest consumer's progress" {
 
 test "write safety limit handles no consumers and the sequence upper bound" {
     const handler = struct {
-        fn handle(_: usize) void {}
+        fn handle(events: []const usize) usize {
+            return events.len;
+        }
     }.handle;
-    const test_handlers = [_]*const fn (usize) void{handler};
+    const test_handlers = [_]EventHandler(usize){handler};
 
     inline for (.{ false, true }) |multi_producer| {
         inline for (.{ test_handlers[0..0], test_handlers[0..] }) |event_handlers| {
             const Bus = RingBufferEventBus(usize, multi_producer, event_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
-            var bus = try Bus.init(std.testing.allocator, 8);
+            var bus = try Bus.init(std.testing.allocator, 8, 1);
             defer bus.deinit();
 
             for (bus.consumer_seq) |*consumer| consumer.value.store(std.math.maxInt(usize) - 1, .release);

@@ -1,5 +1,6 @@
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
 const Counter = @import("support/synchronization.zig").Counter;
@@ -10,7 +11,7 @@ test "single producer tests" {
     const allocator = std.testing.allocator;
 
     const recorders = [_]type{ Recorder(2, event_count), Recorder(3, event_count), Recorder(4, event_count), Recorder(5, event_count) };
-    const handlers: [4]*const fn (usize) void = .{
+    const handlers: [4]EventHandler(usize) = .{
         recorders[0].handle,
         recorders[1].handle,
         recorders[2].handle,
@@ -24,7 +25,7 @@ test "single producer tests" {
         &handlers,
         waiting_strategy.BusySpin,
         waiting_strategy.BusySpin,
-    ).init(allocator, 8);
+    ).init(allocator, 8, 1);
     defer bus.deinit();
 
     try std.testing.expect(bus.state.load(.acquire) == .idle);
@@ -50,7 +51,7 @@ const event_count = 512;
 
 const First = Recorder(0, event_count);
 const Second = Recorder(1, event_count);
-const concurrent_handlers = [_]*const fn (usize) void{ First.handle, Second.handle };
+const concurrent_handlers = [_]EventHandler(usize){ First.handle, Second.handle };
 const Bus = RingBufferEventBus(
     usize,
     false,
@@ -77,7 +78,7 @@ fn publish(bus: *Bus, start: usize, len: usize) void {
 test "concurrent producer and two handlers preserve order across wraps" {
     First.reset();
     Second.reset();
-    var bus = try Bus.init(std.testing.allocator, capacity);
+    var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
 
     try bus.start();
@@ -111,7 +112,7 @@ test "publisher waits for a full buffer until handlers advance" {
     First.entered = &entered;
     Second.entered = &entered;
 
-    var bus = try Bus.init(std.testing.allocator, capacity);
+    var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
     try bus.start();
 
@@ -141,7 +142,7 @@ test "stop drains queued events from paused handlers and restart preserves seque
     First.entered = &entered;
     Second.entered = &entered;
 
-    var bus = try Bus.init(std.testing.allocator, capacity);
+    var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
     try bus.start();
 
