@@ -18,7 +18,9 @@ pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
             entered = null;
         }
 
-        pub fn handle(value: usize) void {
+        pub fn handle(events: []const usize) usize {
+            std.debug.assert(events.len == 1);
+            const value = events[0];
             // Paused-handler tests stop at the first event, before the bus can
             // advance this consumer's sequence. Signal once per handler, not
             // per event, so `entered` counts handlers that reached the gate.
@@ -31,6 +33,7 @@ pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
             // Count excess deliveries so assertions fail without overrunning storage.
             if (count < values.len) values[count] = value;
             count += 1;
+            return 1;
         }
 
         pub fn expectRange(start: usize, len: usize) !void {

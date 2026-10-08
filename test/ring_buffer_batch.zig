@@ -1,0 +1,241 @@
+const std = @import("std");
+const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventHandler = @import("zigrupt").EventHandler;
+const waiting_strategy = @import("zigrupt").waiting_strategy;
+const Gate = @import("support/synchronization.zig").Gate;
+const Counter = @import("support/synchronization.zig").Counter;
+const releaseWhenDraining = @import("support/utils.zig").releaseWhenDraining;
+
+const capacity = 8;
+
+fn BatchRecorder(comptime id: usize) type {
+    return struct {
+        var unique_id = id;
+        var gate: *Gate = undefined;
+        var entered: *Counter = undefined;
+        var paused: bool = false;
+        var consume_limit: usize = capacity;
+        var return_zero_once: bool = false;
+        var lengths: [32]usize = undefined;
+        var first_values: [32]usize = undefined;
+        var calls: usize = 0;
+        var values: [32]usize = undefined;
+        var count: usize = 0;
+
+        fn reset(release: *Gate, ready: *Counter) void {
+            gate = release;
+            entered = ready;
+            paused = false;
+            consume_limit = capacity;
+            return_zero_once = false;
+            calls = 0;
+            count = 0;
+        }
+
+        fn handle(events: []const usize) usize {
+            if (!paused) {
+                paused = true;
+                entered.increment();
+                gate.wait();
+                // Retry the first event after the entire test queue is ready.
+                // Releasing during stop forces that retry into the drain loop.
+                return 0;
+            }
+            const consumed = if (return_zero_once and calls == 0) 0 else @min(consume_limit, events.len);
+            if (calls < lengths.len) {
+                lengths[calls] = events.len;
+                first_values[calls] = events[0];
+            }
+            calls += 1;
+            for (events[0..consumed]) |value| {
+                if (count < values.len) values[count] = value;
+                count += 1;
+            }
+            return consumed;
+        }
+
+        fn expectBatches(expected: []const usize) !void {
+            try std.testing.expectEqual(expected.len, calls);
+            try std.testing.expectEqualSlices(usize, expected, lengths[0..calls]);
+        }
+
+        fn expectRange(start: usize, len: usize) !void {
+            try std.testing.expectEqual(len, count);
+            for (values[0..count], start..) |value, expected| {
+                try std.testing.expectEqual(expected, value);
+            }
+        }
+    };
+}
+
+const First = BatchRecorder(0);
+const Second = BatchRecorder(1);
+const handlers = [_]EventHandler(usize){ First.handle, Second.handle };
+
+fn Bus(comptime multi_producer: bool) type {
+    return RingBufferEventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+}
+
+fn finish(bus: anytype, gate: *Gate, draining: bool, next_sequence: usize) !void {
+    if (draining) {
+        const releaser = try std.Thread.spawn(.{}, releaseWhenDraining, .{ bus, gate });
+        defer releaser.join();
+        try bus.stop();
+    } else {
+        gate.open();
+        for (bus.consumer_seq) |*consumer| {
+            while (consumer.value.load(.acquire) < next_sequence) std.Thread.yield() catch {};
+        }
+        try bus.stop();
+    }
+}
+
+test "batch size must be nonzero and no larger than capacity" {
+    inline for (.{ false, true }) |multi_producer| {
+        for ([_]usize{ 1, capacity }) |buffer_size| {
+            try std.testing.expectError(error.IncorrectBatchSize, Bus(multi_producer).init(std.testing.allocator, buffer_size, 0));
+            try std.testing.expectError(error.IncorrectBatchSize, Bus(multi_producer).init(std.testing.allocator, buffer_size, buffer_size + 1));
+            for (1..buffer_size + 1) |max_batch| {
+                var bus = try Bus(multi_producer).init(std.testing.allocator, buffer_size, max_batch);
+                defer bus.deinit();
+                try std.testing.expectEqual(max_batch, bus.max_batch_size);
+            }
+        }
+    }
+}
+
+test "running and draining batches respect size, wrap and the end of the queue" {
+    const Case = struct { max_batch: usize, events: usize, lengths: []const usize };
+    const cases = [_]Case{
+        .{ .max_batch = 1, .events = 8, .lengths = &.{ 1, 1, 1, 1, 1, 1, 1, 1 } },
+        .{ .max_batch = 3, .events = 8, .lengths = &.{ 3, 3, 1, 1 } },
+        .{ .max_batch = 8, .events = 8, .lengths = &.{ 7, 1 } },
+        .{ .max_batch = 3, .events = 5, .lengths = &.{ 3, 2 } },
+        .{ .max_batch = 8, .events = 5, .lengths = &.{5} },
+    };
+    inline for (.{ false, true }) |multi_producer| {
+        for ([_]bool{ false, true }) |draining| {
+            for (cases) |case| {
+                var bus = try Bus(multi_producer).init(std.testing.allocator, capacity, case.max_batch);
+                defer bus.deinit();
+                // A bad batch should report extra deliveries, not read undefined data.
+                @memset(bus.buffer, std.math.maxInt(usize));
+                var gate: Gate = .{};
+                var entered: Counter = .{};
+                First.reset(&gate, &entered);
+                Second.reset(&gate, &entered);
+                try bus.start();
+                defer {
+                    gate.open();
+                    bus.stop() catch {};
+                }
+                try bus.produce(1);
+                entered.waitFor(handlers.len);
+                for (2..case.events + 1) |value| try bus.produce(value);
+                try finish(&bus, &gate, draining, case.events + 1);
+
+                inline for (.{ First, Second }) |recorder| {
+                    try recorder.expectBatches(case.lengths);
+                    try recorder.expectRange(1, case.events);
+                }
+                for (bus.consumer_seq) |*consumer| {
+                    try std.testing.expectEqual(case.events + 1, consumer.value.load(.acquire));
+                }
+            }
+        }
+    }
+}
+
+test "partial and zero consumption retry the unconsumed suffix independently per handler" {
+    inline for (.{ false, true }) |multi_producer| {
+        for ([_]bool{ false, true }) |draining| {
+            var bus = try Bus(multi_producer).init(std.testing.allocator, capacity, 5);
+            defer bus.deinit();
+            // Repeat on the same bus to check that restart preserves progress and
+            // batches do not include publications left over from the previous lap.
+            for (0..2) |lap| {
+                var gate: Gate = .{};
+                var entered: Counter = .{};
+                First.reset(&gate, &entered);
+                Second.reset(&gate, &entered);
+                Second.consume_limit = 2;
+                Second.return_zero_once = true;
+                const start = lap * capacity + 1;
+                try bus.start();
+                defer {
+                    gate.open();
+                    bus.stop() catch {};
+                }
+                try bus.produce(start);
+                entered.waitFor(handlers.len);
+                for (start + 1..start + capacity) |value| try bus.produce(value);
+                try finish(&bus, &gate, draining, start + capacity);
+
+                try First.expectBatches(&.{ 5, 2, 1 });
+                try Second.expectBatches(&.{ 5, 5, 5, 3, 1, 1 });
+                const expected_first = [_]usize{ start, start, start + 2, start + 4, start + 6, start + 7 };
+                try std.testing.expectEqualSlices(usize, &expected_first, Second.first_values[0..Second.calls]);
+                try First.expectRange(start, capacity);
+                try Second.expectRange(start, capacity);
+                for (bus.consumer_seq) |*consumer| {
+                    try std.testing.expectEqual(start + capacity, consumer.value.load(.acquire));
+                }
+            }
+        }
+    }
+}
+
+test "running and draining batches stop at unpublished or stale claims before later publications" {
+    for ([_]bool{ false, true }) |draining| {
+        for ([_]bool{ false, true }) |stale| {
+            var bus = try Bus(true).init(std.testing.allocator, capacity, capacity);
+            defer bus.deinit();
+            @memset(bus.buffer, std.math.maxInt(usize));
+            if (stale) {
+                var gate: Gate = .{};
+                var entered: Counter = .{};
+                First.reset(&gate, &entered);
+                Second.reset(&gate, &entered);
+                try bus.start();
+                defer {
+                    gate.open();
+                    bus.stop() catch {};
+                }
+                try bus.produce(1);
+                entered.waitFor(handlers.len);
+                for (2..capacity + 1) |value| try bus.produce(value);
+                try finish(&bus, &gate, false, capacity + 1);
+            }
+
+            var gate: Gate = .{};
+            var entered: Counter = .{};
+            First.reset(&gate, &entered);
+            Second.reset(&gate, &entered);
+            const start = bus.sequencer.current();
+            try bus.start();
+            defer {
+                gate.open();
+                bus.stop() catch {};
+            }
+            try bus.produce(start);
+            entered.waitFor(handlers.len);
+            try bus.produce(start + 1);
+            // Model a producer that claimed but never published. No producer is
+            // actually in flight when stop() runs; the gap is intentionally retained.
+            const gap = bus.sequencer.claim();
+            try std.testing.expectEqual(start + 2, gap);
+            for (gap + 1..gap + 4) |value| try bus.produce(value);
+            try std.testing.expectEqual(if (stale) @as(usize, 3) else 0, bus.buffer_seq[gap & bus.mask].load(.acquire));
+            try finish(&bus, &gate, draining, gap);
+
+            inline for (.{ First, Second }) |recorder| {
+                try recorder.expectBatches(&.{2});
+                try recorder.expectRange(start, 2);
+            }
+            for (bus.consumer_seq) |*consumer| {
+                try std.testing.expectEqual(gap, consumer.value.load(.acquire));
+            }
+            try std.testing.expectEqual(gap + 4, bus.sequencer.current());
+        }
+    }
+}

@@ -11,6 +11,7 @@ const CliArgs = struct {
     publishers: usize = 1,
     consumers: usize = 1,
     events_per_publisher: usize = 100_000,
+    max_batch: usize = 1,
     repetitions: usize = 5,
     min_duration_ms: u64 = 500,
     publisher_cpus: []const usize = &.{},
@@ -33,6 +34,8 @@ const CliArgs = struct {
             self.consumers = try std.fmt.parseInt(usize, value, 10);
         } else if (std.mem.cutPrefix(u8, arg, "--events_per_publisher=")) |value| {
             self.events_per_publisher = try std.fmt.parseInt(usize, value, 10);
+        } else if (std.mem.cutPrefix(u8, arg, "--max_batch=")) |value| {
+            self.max_batch = try std.fmt.parseInt(usize, value, 10);
         } else if (std.mem.cutPrefix(u8, arg, "--repetitions=")) |value| {
             self.repetitions = try std.fmt.parseInt(usize, value, 10);
         } else if (std.mem.cutPrefix(u8, arg, "--min_duration_ms=")) |value| {
@@ -47,6 +50,7 @@ const CliArgs = struct {
     fn validate(self: CliArgs) !void {
         if (self.publishers == 0 or self.consumers == 0 or
             self.consumers > max_consumers or self.events_per_publisher == 0 or
+            self.max_batch == 0 or self.max_batch > buffer_size or
             self.repetitions < 2 or self.min_duration_ms == 0)
             return error.InvalidArguments;
         if ((self.publisher_cpus.len != 0 and self.publisher_cpus.len != self.publishers) or
@@ -185,27 +189,30 @@ fn Benchmark(comptime consumer_count: usize, comptime multi_producer: bool, comp
             tid: std.Thread.Id = undefined,
         };
         const handlers = blk: {
-            var result: [consumer_count]*const fn (Event) void = undefined;
+            var result: [consumer_count]zigrupt.EventHandler(Event) = undefined;
             for (&result, 0..) |*handler, id| handler.* = struct {
-                fn handle(event: Event) void {
-                    const self = event.benchmark;
-                    if (measure_latency) {
-                        const elapsed = event.sent.durationTo(std.Io.Clock.awake.now(self.io)).toNanoseconds();
-                        const samples = self.samples.?;
-                        samples.data[id * samples.stride + event.index] = elapsed;
-                    }
-                    // Only this consumer touches its countdown during a phase.
-                    // Shared synchronization occurs once, on its final delivery.
-                    self.consumed[id].remaining -= 1;
-                    if (self.consumed[id].remaining == 0) {
-                        self.consumed[id].tid = std.Thread.getCurrentId();
-                        // The acquire/release chain gathers every consumer's writes
-                        // before the last one publishes completion to the coordinator.
-                        if (self.done.fetchAdd(1, .acq_rel) + 1 == consumer_count) {
-                            self.end = std.Io.Clock.awake.now(self.io);
-                            self.completed.set(self.io);
+                fn handle(events: []const Event) usize {
+                    for (events) |event| {
+                        const self = event.benchmark;
+                        if (measure_latency) {
+                            const elapsed = event.sent.durationTo(std.Io.Clock.awake.now(self.io)).toNanoseconds();
+                            const samples = self.samples.?;
+                            samples.data[id * samples.stride + event.index] = elapsed;
+                        }
+                        // Only this consumer touches its countdown during a phase.
+                        // Shared synchronization occurs once, on its final delivery.
+                        self.consumed[id].remaining -= 1;
+                        if (self.consumed[id].remaining == 0) {
+                            self.consumed[id].tid = std.Thread.getCurrentId();
+                            // The acquire/release chain gathers every consumer's writes
+                            // before the last one publishes completion to the coordinator.
+                            if (self.done.fetchAdd(1, .acq_rel) + 1 == consumer_count) {
+                                self.end = std.Io.Clock.awake.now(self.io);
+                                self.completed.set(self.io);
+                            }
                         }
                     }
+                    return events.len;
                 }
             }.handle;
             break :blk result;
@@ -286,7 +293,7 @@ fn Benchmark(comptime consumer_count: usize, comptime multi_producer: bool, comp
             self.publisher_cpus = args.publisher_cpus;
             const threads = try allocator.alloc(std.Thread, args.publishers);
             defer allocator.free(threads);
-            var bus = try Bus.init(allocator, buffer_size);
+            var bus = try Bus.init(allocator, buffer_size, args.max_batch);
             defer bus.deinit();
             try bus.start();
             defer bus.stop() catch unreachable;
@@ -370,12 +377,12 @@ fn runMode(init: std.process.Init, args: CliArgs, comptime consumers: usize, com
 
 pub fn main(init: std.process.Init) !void {
     const args = CliArgs.parse(init) catch |err| {
-        std.debug.print("Usage: zig build bench -- --publishers=1 --consumers=1 --events_per_publisher=100000 --repetitions=5 --min_duration_ms=500 [--publisher_cpus=0] [--consumer_cpus=1]\nConsumers: 1..{d}; repetitions >= 2; counts/duration > 0; one CPU ID per worker.\n", .{max_consumers});
+        std.debug.print("Usage: zig build bench -- --publishers=1 --consumers=1 --events_per_publisher=100000 --max_batch=1 --repetitions=5 --min_duration_ms=500 [--publisher_cpus=0] [--consumer_cpus=1]\nConsumers: 1..{d}; max_batch: 1..{d}; repetitions >= 2; counts/duration > 0; one CPU ID per worker.\n", .{ max_consumers, buffer_size });
         return err;
     };
     try reportPlacement(args);
-    std.debug.print("Ring buffer: {d} producers, {d} consumers, busy spin, capacity {d}, ReleaseFast\n", .{
-        args.publishers, args.consumers, buffer_size,
+    std.debug.print("Ring buffer: {d} producers, {d} consumers, busy spin, capacity {d}, max batch {d}, ReleaseFast\n", .{
+        args.publishers, args.consumers, buffer_size, args.max_batch,
     });
     std.debug.print("Throughput is end-to-end broadcast delivery (unique events/s), including countdown bookkeeping.\nLatency is a separate saturated, instrumented run: before produce() to the handler clock read, including backpressure and queueing. Clock/sample overhead remains; this is not fixed-arrival-rate latency.\n", .{});
     // The bus requires its handlers at comptime; instantiate a bounded set of consumer counts.
@@ -405,6 +412,22 @@ test "options reject invalid counts and CPU-list lengths" {
     try std.testing.expectError(error.InvalidArguments, args.validate());
     try std.testing.expectError(error.InvalidCharacter, args.option(arena.allocator(), "--consumer_cpus=1,"));
     try std.testing.expectError(error.UnknownArgument, args.option(arena.allocator(), "--unknown=1"));
+}
+
+test "max batch defaults to one and accepts only sizes within capacity" {
+    var args: CliArgs = .{};
+    try std.testing.expectEqual(1, args.max_batch);
+    for ([_]usize{ 1, 7, buffer_size }) |size| {
+        var text: [64]u8 = undefined;
+        try args.option(std.testing.allocator, try std.fmt.bufPrint(&text, "--max_batch={d}", .{size}));
+        try std.testing.expectEqual(size, args.max_batch);
+        try args.validate();
+    }
+    try args.option(std.testing.allocator, "--max_batch=0");
+    try std.testing.expectError(error.InvalidArguments, args.validate());
+    try args.option(std.testing.allocator, "--max_batch=1025");
+    try std.testing.expectError(error.InvalidArguments, args.validate());
+    try std.testing.expectError(error.InvalidCharacter, args.option(std.testing.allocator, "--max_batch=abc"));
 }
 
 test "zero counts, unsupported consumer counts, and event-count overflow are rejected" {
@@ -469,14 +492,16 @@ test "repeated phases complete every consumer and publish worker-side end time" 
             const samples = try Samples.init(std.testing.allocator, publishers * count, 3);
             defer samples.deinit(std.testing.allocator);
             var bench: Benchmark(3, multi, latency) = .{ .io = std.testing.io, .samples = if (latency) samples else null };
-            const args: CliArgs = .{ .publishers = publishers, .consumers = 3 };
-            for (0..2) |_| {
-                const elapsed = try bench.run(std.testing.allocator, args, count);
-                try std.testing.expect(elapsed > 0);
-                try std.testing.expect(bench.completed.isSet());
-                try std.testing.expectEqual(3, bench.done.load(.acquire));
-                for (bench.consumed) |counter| try std.testing.expectEqual(0, counter.remaining);
-                if (latency) _ = try samples.percentiles();
+            for ([_]usize{ 1, 7, buffer_size }) |max_batch| {
+                const args: CliArgs = .{ .publishers = publishers, .consumers = 3, .max_batch = max_batch };
+                for (0..2) |_| {
+                    const elapsed = try bench.run(std.testing.allocator, args, count);
+                    try std.testing.expect(elapsed > 0);
+                    try std.testing.expect(bench.completed.isSet());
+                    try std.testing.expectEqual(3, bench.done.load(.acquire));
+                    for (bench.consumed) |counter| try std.testing.expectEqual(0, counter.remaining);
+                    if (latency) _ = try samples.percentiles();
+                }
             }
         }
     }
