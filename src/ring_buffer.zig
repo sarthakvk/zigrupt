@@ -46,7 +46,6 @@ const SingleProducerSequencer = struct {
     }
 
     pub fn claim(self: *Self) usize {
-        // One writer needs no RMW; consumers still read this cursor atomically.
         const seq = self.next.value.load(.monotonic);
         self.next.value.store(seq + 1, .release);
         return seq;
