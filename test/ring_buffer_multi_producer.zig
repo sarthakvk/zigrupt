@@ -1,5 +1,6 @@
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
 const Counter = @import("support/synchronization.zig").Counter;
@@ -13,7 +14,7 @@ const event_count = producer_count * events_per_producer;
 
 const First = Recorder(0, event_count);
 const Second = Recorder(1, event_count);
-const concurrent_handlers = [_]*const fn (usize) void{ First.handle, Second.handle };
+const concurrent_handlers = [_]EventHandler(usize){ First.handle, Second.handle };
 const Bus = RingBufferEventBus(
     usize,
     true,
@@ -89,7 +90,7 @@ test "MultiProducer concurrent producers deliver exactly once across wraps" {
     for ([_]usize{ 1, 2, capacity, 64 }) |buffer_size| {
         First.reset();
         Second.reset();
-        var bus = try Bus.init(std.testing.allocator, buffer_size);
+        var bus = try Bus.init(std.testing.allocator, buffer_size, 1);
         defer bus.deinit();
 
         try std.testing.expectEqual(.idle, bus.state.load(.acquire));
@@ -120,7 +121,7 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
     First.entered = &entered;
     Second.entered = &entered;
 
-    var bus = try Bus.init(std.testing.allocator, capacity);
+    var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
     try bus.start();
     defer {
@@ -207,7 +208,7 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
     First.entered = &entered;
     Second.entered = &entered;
 
-    var bus = try GapBus.init(std.testing.allocator, capacity);
+    var bus = try GapBus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
     try bus.start();
     defer {
@@ -261,7 +262,7 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     First.entered = &entered;
     Second.entered = &entered;
 
-    var bus = try Bus.init(std.testing.allocator, capacity);
+    var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
     try bus.start();
     defer {

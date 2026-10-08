@@ -12,10 +12,19 @@ const PaddedAtomicSeq = struct {
     value: std.atomic.Value(usize) align(std.atomic.cache_line),
 };
 
+/// EventHandler
+/// Event handlers is a function that accepts a slice of events to process
+/// and returns the number of events consumed.
+/// The returned values must be <= input slice length
+pub fn EventHandler(comptime T: type) type {
+    return *const fn ([]const T) usize;
+}
+
 pub const EventBusError = error{
     InvalidConfig,
     InvalidConsumerID,
     IncorrectBufferSize,
+    IncorrectBatchSize,
     BusIdle,
     BusStarting,
     BusRunning,
@@ -132,7 +141,7 @@ const MultiProducerSequencer = struct {
 pub fn RingBufferEventBus(
     comptime T: type,
     multi_producer: bool,
-    event_handlers: []const *const fn (T) void,
+    event_handlers: []const EventHandler(T),
     PublisherWaitingStrategy: type,
     ConsumerWaitingStrategy: type,
 ) type {
@@ -144,6 +153,7 @@ pub fn RingBufferEventBus(
     return struct {
         buffer: []T,
         buffer_seq: []atomic.Value(usize),
+        max_batch_size: usize,
         consumer_seq: []PaddedAtomicSeq,
         mask: usize,
         state: atomic.Value(EventBusState),
@@ -154,10 +164,16 @@ pub fn RingBufferEventBus(
         allocator: mem.Allocator,
 
         const Self = @This();
-
-        pub fn init(allocator: std.mem.Allocator, buffer_size: usize) !Self {
+        /// Initialize the RingBuffer
+        /// Args:
+        ///     - allocator: Allocator interface
+        ///     - buffer_size: size of ring buffer, must be a power of 2
+        ///     - max_batch_size: Maximum length of events slice sent to event_handler
+        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, max_batch_size: usize) !Self {
             // buffer_size must be a power of 2
             if (buffer_size == 0 or buffer_size & (buffer_size - 1) != 0) return EventBusError.IncorrectBufferSize;
+
+            if (max_batch_size == 0 or max_batch_size > buffer_size) return EventBusError.IncorrectBatchSize;
 
             const buffer = try allocator.alloc(T, buffer_size);
             errdefer allocator.free(buffer);
@@ -177,6 +193,7 @@ pub fn RingBufferEventBus(
             return .{
                 .buffer = buffer,
                 .buffer_seq = buffer_seq,
+                .max_batch_size = max_batch_size,
                 .consumer_seq = consumer_seq,
                 .mask = (buffer_size - 1),
                 .state = .init(.idle),
@@ -275,12 +292,18 @@ pub fn RingBufferEventBus(
                     ConsumerWaitingStrategy.wait();
                     continue;
                 }
+                const index = c_seq & self.mask;
+                const limit = @min(self.max_batch_size, self.buffer.len - index);
+                var batch_size: usize = 1;
 
-                const event = self.buffer[(c_seq & self.mask)];
+                while (batch_size < limit) : (batch_size += 1) {
+                    const expected = c_seq + batch_size;
+                    const published = self.buffer_seq[index + batch_size].load(.acquire);
+                    if (published != expected) break;
+                }
 
-                handler(event);
-
-                c_seq += 1;
+                const events_slice = self.buffer[index..][0..batch_size];
+                c_seq += handler(events_slice);
                 self.consumer_seq[handler_id].value.store(c_seq, .release);
             }
 
@@ -298,11 +321,10 @@ pub fn RingBufferEventBus(
 
                 if (buffer_seq == 0 or c_seq > buffer_seq) break;
 
-                const event = self.buffer[(c_seq & self.mask)];
+                const batch_size = @min(self.max_batch_size, cursor - c_seq + 1);
+                const events_slice = self.buffer[(c_seq & self.mask)..][0..batch_size];
 
-                handler(event);
-
-                c_seq += 1;
+                c_seq += handler(events_slice);
                 self.consumer_seq[handler_id].value.store(c_seq, .release);
             }
         }
