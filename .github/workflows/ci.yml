@@ -1,0 +1,40 @@
+name: Checks
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  zig:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - name: Formatting
+        run: zig fmt --check build.zig build.zig.zon src test bench examples
+      - name: Existing tests
+        run: zig build test --summary all
+      - name: Executable examples
+        run: zig build check-examples --summary all
+      - name: Standalone package consumer
+        run: python3 scripts/check-install.py
+
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: docs/.node-version
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - run: npm install --global npm@11.16.0
+      - run: npm --prefix docs ci
+      - name: Snippets, production build, links, and assets
+        run: npm --prefix docs run check

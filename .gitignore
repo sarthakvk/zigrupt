@@ -3,3 +3,8 @@ zig-out/
 /benchmarks/results/
 *.o
 *.*DS_Store
+
+# Documentation tooling stays separate from the Zig library.
+docs/node_modules/
+docs/dist/
+docs/.astro/

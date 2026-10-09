@@ -1,0 +1,23 @@
+{
+  "name": "zigrupt-docs",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "engines": { "node": "24.18.0", "npm": "11.16.0" },
+  "packageManager": "npm@11.16.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "node scripts/sync-snippets.mjs --check && astro build",
+    "preview": "astro preview",
+    "snippets": "node scripts/sync-snippets.mjs",
+    "check:snippets": "node scripts/sync-snippets.mjs --check",
+    "check:links": "node scripts/check-links.mjs",
+    "check": "npm run build && npm run check:links"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "7.3.2",
+    "@astrojs/starlight": "0.42.6",
+    "astro": "7.3.8"
+  },
+  "devDependencies": { "linkedom": "0.18.13" }
+}
