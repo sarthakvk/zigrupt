@@ -18,7 +18,7 @@ only after it returns successfully. If thread creation fails, `start()` stops an
 joins any threads it already created, then leaves the bus idle. Propagate the
 error without calling `stop()`; the initialized bus still needs `deinit()`.
 
-The [first program](/zigrupt/getting-started/#first-program) places its error-path
+The [first program](/zigrupt/getting-started/#try-it) places its error-path
 stop after successful startup and its deinitialization immediately after init.
 
 ## Safe shutdown

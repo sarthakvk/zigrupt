@@ -25,7 +25,7 @@ Commit the generated dependency URL and hash. For reproducible updates, use
 reviewed commit. Add
 `b.dependency("zigrupt", .{ .target = target, .optimize = optimize }).module("zigrupt")`
 as the executable's `zigrupt` import. See the
-[complete installation guide](docs/src/content/docs/getting-started.md) and
+[complete installation guide](docs/getting-started.md) and
 [consumer build file](examples/consumer/build.zig) for the full setup, including
 installation from a checkout before public availability.
 
@@ -74,9 +74,9 @@ referenced data alive through consumption, and stop before `deinit()`.
 
 ## Documentation and development
 
-- [Full documentation source](docs/src/content/docs/index.md), [concepts](docs/src/content/docs/concepts.md), and [API reference](docs/src/content/docs/reference/api.md).
+- [Full documentation source](docs/index.md), [concepts](docs/concepts.md), and [API reference](docs/reference/api.md).
 - [Executable examples](examples/README.md) and [existing behavior tests](test/): `zig build test`.
 - [Benchmark methodology and caveats](bench/README.md): `zig build bench`.
 - [Contributing](CONTRIBUTING.md), including formatting, installation verification, and documentation checks.
-- [Documentation preview/build instructions](docs/README.md). A GitHub Pages configuration is prepared; no published documentation URL is assumed until hosting is enabled and deployment succeeds.
+- [Documentation preview/build instructions](CONTRIBUTING.md#documentation-workflow). A GitHub Pages configuration is prepared; no published documentation URL is assumed until hosting is enabled and deployment succeeds.
 - [MIT license](LICENSE).

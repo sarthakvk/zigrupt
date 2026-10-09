@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { parseHTML } from 'linkedom';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const dist = resolve(root, 'docs/dist');
+const dist = resolve(root, '.docs-site/dist');
 const origin = 'https://sarthakvk.github.io';
-const base = '/zigrupt/';
+const base = (process.env.DOCS_BASE || '/zigrupt').replace(/\/$/, '') + '/';
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
   entry.isDirectory() ? walk(resolve(dir, entry.name)) : [resolve(dir, entry.name)]);
 if (!existsSync(dist)) throw new Error('Build the documentation before checking links');
@@ -59,7 +59,7 @@ for (const file of files) {
   for (const node of doc.querySelectorAll('[href], [src], [srcset], [poster]')) {
     for (const attribute of ['href', 'src', 'poster']) {
       // Starlight emits a synthetic /404/ canonical for Pages' special 404.html.
-      if (file === resolve(dist, '404.html') && node.getAttribute('rel') === 'canonical') continue;
+      if (file.endsWith('/404.html') && node.getAttribute('rel') === 'canonical') continue;
       if (node.hasAttribute(attribute)) verify(node.getAttribute(attribute), file);
     }
     if (node.hasAttribute('srcset')) {
@@ -72,7 +72,7 @@ for (const file of files) {
 }
 
 // Check repository-facing relative Markdown links without needing a hosted site.
-for (const name of ['README.md', 'CONTRIBUTING.md', 'docs/README.md', 'docs/behavior-checklist.md', 'examples/README.md', 'bench/README.md']) {
+for (const name of ['README.md', 'CONTRIBUTING.md', 'examples/README.md', 'bench/README.md']) {
   const file = resolve(root, name);
   const prose = readFileSync(file, 'utf8').replace(/^```[^\n]*\n[\s\S]*?^```/gm, '');
   for (const match of prose.matchAll(/!?\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)) {

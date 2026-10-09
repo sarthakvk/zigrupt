@@ -4,7 +4,8 @@ zig-out/
 *.o
 *.*DS_Store
 
-# Documentation tooling stays separate from the Zig library.
-docs/node_modules/
-docs/dist/
-docs/.astro/
+# Generated documentation site files.
+.docs-site/node_modules/
+.docs-site/dist/
+.docs-site/.astro/
+.docs-site/scripts/__pycache__/

@@ -8,7 +8,7 @@ its value, and tracking each consumer's progress. zigrupt uses these steps to
 reuse a fixed set of event slots across threads. You do not need to understand
 atomic memory ordering to get started.
 
-![Producers publish into a ring buffer which broadcasts to independent handlers. The slowest handler's progress gates slot reuse.](../../assets/broadcast.svg)
+![Producers publish into a ring buffer which broadcasts to independent handlers. The slowest handler's progress gates slot reuse.](assets/broadcast.svg)
 
 ## A ring of reusable slots
 

@@ -25,7 +25,7 @@ Larger capacity uses more memory and can absorb bursts before backpressure.
 Larger batches can reduce callback overhead, but a handler acknowledges its
 consumed prefix only when the callback returns. Waiting strategies affect CPU
 usage while waiting for capacity or publication. Measure the trade-offs using
-the [benchmark methodology](/zigrupt/performance/).
+the [benchmark methodology](https://github.com/sarthakvk/zigrupt/blob/main/bench/README.md).
 
 Configuration is independent of lifecycle ownership: the thread that initializes
 the bus owns startup and shutdown even if another thread is its sole publisher.

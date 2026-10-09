@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const check = process.argv.includes('--check');
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
   entry.isDirectory() ? walk(resolve(dir, entry.name)) : [resolve(dir, entry.name)]);
-const pages = [resolve(root, 'README.md'), ...walk(resolve(root, 'docs/src/content/docs'))];
+const pages = [resolve(root, 'README.md'), ...walk(resolve(root, 'docs'))];
 let blocks = 0;
 let stale = false;
 for (const page of pages) {

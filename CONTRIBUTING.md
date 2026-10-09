@@ -13,7 +13,7 @@ directly; the existing Devbox `test` script is a placeholder.
 
 Library work requires no Node. The standalone installation check additionally
 uses Python 3. Documentation work uses Node **24.18.0** and npm **11.16.0**, with
-exact site dependencies in `docs/package.json` and `docs/package-lock.json`.
+exact site dependencies in `.docs-site/package.json` and `.docs-site/package-lock.json`.
 
 ## Library and example checks
 
@@ -57,18 +57,19 @@ performance changes.
 From the repository root:
 
 ```sh
-npm --prefix docs ci
-node docs/scripts/sync-snippets.mjs
-npm --prefix docs run check
-npm --prefix docs run dev
+npm --prefix .docs-site ci
+node .docs-site/scripts/sync-snippets.mjs
+npm --prefix .docs-site run check
+npm --prefix .docs-site run dev
 ```
 
 Open `http://localhost:4321/zigrupt/`. For a production preview, first run the
-check/build command, then `npm --prefix docs run preview` and open the same URL.
+check/build command, then `npm --prefix .docs-site run preview` and open the same URL.
 Search is indexed in the production build; validate search using that preview.
 
-Author ordinary Markdown under `docs/src/content/docs/`. New pages need a title
-and description in frontmatter and a sidebar entry in `docs/astro.config.mjs`.
+Author ordinary Markdown under `docs/`, using folders for the site hierarchy.
+New pages need a title and description in frontmatter. The sidebar is generated
+from the Markdown files and folders automatically.
 Use `/zigrupt/.../` links for site routes and relative paths for source assets.
 The production link check verifies pages, fragments, referenced local assets,
 CSS URLs, repository-document relative links, and the search index's presence.
@@ -76,16 +77,13 @@ It does not check external-site uptime or exercise a browser.
 
 Canonical code lives in `examples/`. Keep `snippet` marker pairs around generated
 code in README and docs; run the synchronization command after edits, and commit
-its output. The performance page similarly includes the benchmark README, and
-the workflow page includes this guide. Do not hand-edit generated regions.
+its output. The workflow page includes this guide. Do not hand-edit generated regions.
 `npm run build` checks for stale snippets before building, so CI detects drift.
 
 When a change affects public behavior, update the applicable guides, handwritten
 reference, source comments, canonical examples, and relevant tests in the same
-change. Update the evidence map in `docs/behavior-checklist.md`. This initial
-documentation change deliberately leaves library source and tests untouched.
-Distinguish tested guarantees from source-reviewed rules, and reassess API
-reference generation as the library grows.
+change. Distinguish tested guarantees from source-reviewed rules, and reassess
+API reference generation as the library grows.
 
 ## Issues and pull requests
 
@@ -102,15 +100,17 @@ ordering, backpressure, and shutdown where relevant.
 ## Publishing configuration
 
 GitHub Pages is the proposed host, with base path `/zigrupt/`. The
-`.github/workflows/docs-pages.yml` workflow is **manual only** and restricted to
-`main`. It builds and checks the site before deployment. Pushes and pull requests
-run validation but never publish.
+`.github/workflows/docs-pages.yml` builds, checks, and publishes the site on pushes
+to `main` and on release tags matching `vX.Y.Z`. It can also be run manually.
+Pull requests run validation without publishing. The site root shows the current
+`main` docs. Each release tag containing `docs/index.md` gets an
+archived site at `/zigrupt/<tag>/`; the version menu links to these archives.
+The build uses the Markdown and images committed in each tag, so editing `main`
+does not rewrite released documentation.
 
-Enabling Pages and the first publication remain maintainer decisions. Once
-approved, select GitHub Actions as the Pages source in repository settings, review
-the `github-pages` environment, and manually run the publishing workflow on
-`main`. The workflow does not enable Pages automatically. After a successful
-publication, add the confirmed public URL to the README. A custom domain or a
+Select GitHub Actions as the Pages source in repository settings and review the
+`github-pages` environment once. The workflow does not enable Pages automatically.
+After a successful publication, add the confirmed public URL to the README. A custom domain or a
 change of repository owner/name requires reviewing `site`, `base`, content links,
 and the link check together. No new security or community policy is established
 by this documentation work.
