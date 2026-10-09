@@ -1,3 +1,5 @@
+// Validate local links and assets in the built docs site, plus selected repository
+// Markdown links. Run after building .docs-site/dist.
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

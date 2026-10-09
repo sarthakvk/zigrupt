@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Build main and every documented release tag into one Pages artifact."""
+"""Build main and documented release tags into one GitHub Pages artifact.
+
+Use the current site tooling with each tag's archived docs, then validate the
+combined output's links before the publishing workflow uploads it.
+"""
 
 import io
 import json

@@ -1,3 +1,5 @@
+// Keep marked code snippets and included text in README.md and docs/*.md in sync
+// with their source files. Pass --check to report stale content without editing.
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { resolve, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
