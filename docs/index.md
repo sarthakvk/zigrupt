@@ -43,6 +43,7 @@ and process events in batches to match the workload and available CPU time.
 - [Understand broadcast and backpressure](/zigrupt/concepts/).
 - [Choose producer mode and runtime configuration](/zigrupt/reference/configuration/).
 - [Look up the public API](/zigrupt/reference/api/).
+- [See the measured performance comparison](/zigrupt/performance/).
 - [Run the canonical examples](https://github.com/sarthakvk/zigrupt/tree/main/examples).
 
 The project uses the [MIT license](https://github.com/sarthakvk/zigrupt/blob/main/LICENSE).
