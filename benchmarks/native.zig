@@ -54,12 +54,13 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
         const BusySpin = struct {
             pub fn wait() void {}
         };
-        const handlers = [_]*const fn (Event) void{ handle0, handle1, handle2 };
+        const handlers = [_]*const fn ([]const Event) usize{ handle0, handle1, handle2 };
         const Bus = if (config.ziggy) library.RingBuffer(Event) else library.EventBus(Event, producers > 1, handlers[0..consumers], BusySpin, BusySpin);
         const Consumer = struct {
             count: usize align(128) = 0,
             sum: u64 = 0,
             hash: u64 = 0,
+            max_observed_batch: usize = 0,
             next: [producers]u64 = undefined,
             histogram: []u64,
             trace: []u64,
@@ -81,14 +82,22 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
         var event_base: u64 = 0;
         var cpu_start: u64 = 0;
 
-        fn handle0(event: Event) void {
-            handle(0, event);
+        fn handle0(events: []const Event) usize {
+            return handleBatch(0, events);
         }
-        fn handle1(event: Event) void {
-            handle(1, event);
+        fn handle1(events: []const Event) usize {
+            return handleBatch(1, events);
         }
-        fn handle2(event: Event) void {
-            handle(2, event);
+        fn handle2(events: []const Event) usize {
+            return handleBatch(2, events);
+        }
+
+        fn handleBatch(comptime cid: usize, events: []const Event) usize {
+            if (cid >= consumers) unreachable;
+            // Observe batching only in correctness runs; measured work stays per-event.
+            if (args.check) states[cid].max_observed_batch = @max(states[cid].max_observed_batch, events.len);
+            for (events) |event| handle(cid, event);
+            return events.len;
         }
 
         fn handle(comptime cid: usize, event: Event) void {
@@ -188,7 +197,12 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
                 allocator.free(s.histogram);
                 allocator.free(s.trace);
             };
-            bus = try Bus.init(RingAllocator.value, @intCast(args.capacity));
+            // Java and Rust acknowledge available batches natively. Do not cap
+            // Zigrupt at one event or wait for a full batch before consuming.
+            bus = if (config.ziggy)
+                try Bus.init(RingAllocator.value, @intCast(args.capacity))
+            else
+                try Bus.init(RingAllocator.value, args.capacity, args.capacity);
             defer bus.deinit();
             var polling_thread: ?std.Thread = null;
             if (config.ziggy) polling_thread = try std.Thread.spawn(.{}, poll, .{}) else try bus.start();
@@ -233,11 +247,12 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
                 if (s.count != total or s.sum != expected or s.hash != states[0].hash) @panic("invalid delivery");
                 if (args.check and !std.mem.eql(u64, s.trace, states[0].trace)) @panic("broadcast order mismatch");
             }
-            _ = printf("{\"warm_elapsed_ns\":%llu,", warm_elapsed);
+            _ = printf("{\"warm_elapsed_ns\":%llu,\"max_batch_size\":%zu,", warm_elapsed, if (config.ziggy) @as(usize, 1) else args.capacity);
             _ = printf("\"valid\":true,\"elapsed_ns\":%llu,\"cpu_ns\":%llu,\"peak_rss_bytes\":%llu,\"ring_requested_bytes\":%zu,\"measurement_bytes\":%zu,\"steady_allocations\":%zu,\"blocked_publications\":%zu,\"consumers\":[", end - start, cpu_end - cpu_start, rss, RingAllocator.bytes, consumers * (if (args.rate > 0) @as(usize, 65536 * 8) else 0), allocs, blocked);
             for (&states, 0..) |*s, cid| {
                 if (cid != 0) _ = printf(",");
                 _ = printf("{\"count\":%zu,\"checksum\":%llu,\"order_hash\":%llu", s.count, s.sum, s.hash);
+                if (args.check and !config.ziggy) _ = printf(",\"max_observed_batch\":%zu", s.max_observed_batch);
                 if (args.rate > 0) _ = printf(",\"samples\":%zu,\"p50_ns\":%llu,\"p99_ns\":%llu,\"p999_ns\":%llu", args.count, percentile(s.histogram, args.count, 500), percentile(s.histogram, args.count, 990), percentile(s.histogram, args.count, 999));
                 _ = printf("}");
             }

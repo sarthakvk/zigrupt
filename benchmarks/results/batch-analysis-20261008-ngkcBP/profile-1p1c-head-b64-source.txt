@@ -1,0 +1,43 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 9K of event 'cycles:u'
+# Event count (approx.): 53917047400
+#
+# Overhead  Symbol                                                                Source:Line               IPC   [IPC Coverage]
+# ........  ....................................................................  ........................  ....................
+#
+     8.51%  [.] __vdso_clock_gettime                                              __vdso_clock_gettime+89   -      -            
+     7.33%  [.] sort.block.mergeInternal__anon_47809                              block.zig:824             -      -            
+     5.98%  [.] Thread.LinuxThreadImpl.spawn__anon_47998.Instance.entryFn         ring_buffer.zig:252       -      -            
+     5.53%  [.] Thread.LinuxThreadImpl.spawn__anon_48569.Instance.entryFn         ring_buffer.zig:204       -      -            
+     5.05%  [.] Thread.LinuxThreadImpl.spawn__anon_48569.Instance.entryFn         ring_buffer.zig:205       -      -            
+     4.96%  [.] sort.block.block__anon_47784                                      mem.zig:3864              -      -            
+     4.46%  [.] sort.block.swap__anon_47795                                       block.zig:0               -      -            
+     3.11%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         ring_buffer.zig:362       -      -            
+     3.00%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         atomic.zig:21             -      -            
+     2.87%  [.] Thread.LinuxThreadImpl.spawn__anon_48569.Instance.entryFn         ring_buffer.zig:291       -      -            
+     2.74%  [.] Thread.LinuxThreadImpl.spawn__anon_48569.Instance.entryFn         ring_buffer.zig:302       -      -            
+     2.63%  [.] Thread.LinuxThreadImpl.spawn__anon_48018.Instance.entryFn         ring_buffer.zig:291       -      -            
+     2.45%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         ring_buffer.zig:363       -      -            
+     2.13%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         ring_buffer.zig:73        -      -            
+     1.93%  [.] ring_buffer.Benchmark(1,false,true).handlers__struct_4250.handle  Io.zig:916                -      -            
+     1.87%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         ring_buffer.zig:68        -      -            
+     1.73%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         ring_buffer.zig:59        -      -            
+     1.48%  [.] sort.block.block__anon_47784                                      block.zig:0               -      -            
+     1.31%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         ring_buffer.zig:254       -      -            
+     1.30%  [.] sort.block.block__anon_47784                                      block.zig:1043            -      -            
+     1.24%  [.] sort.block.block__anon_47784                                      sort.zig:135              -      -            
+     1.19%  [.] sort.block.block__anon_47784                                      block.zig:1044            -      -            
+     1.18%  [.] sort.block.block__anon_47784                                      mem.zig:3865              -      -            
+     1.16%  [.] sort.block.block__anon_47784                                      block.zig:1002            -      -            
+     1.13%  [.] sort.block.block__anon_47784                                      block.zig:1001            -      -            
+     1.04%  [.] sort.block.block__anon_47784                                      block.zig:1049            -      -            
+     1.00%  [.] sort.block.block__anon_47784                                      sort.zig:48               -      -            
+
+
+#
+# (Tip: To see call chains by final symbol taking CPU time (bottom up) use perf report -G)
+#

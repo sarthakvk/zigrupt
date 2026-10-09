@@ -1,0 +1,7 @@
+.{
+    .name = .zigrupt,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{""},
+    .fingerprint = 0x3ac6abab7a91d803,
+}

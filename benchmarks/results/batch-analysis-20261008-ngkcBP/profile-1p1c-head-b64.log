@@ -1,0 +1,22 @@
+Placement (8 available logical CPUs):
+  producer 0: CPU 0
+  consumer 0: CPU 1
+CPU IDs are logical: distinct IDs may still share an SMT core. Coordinator parks during measurement.
+Ring buffer: 1 producers, 1 consumers, busy spin, capacity 1024, max batch 64, ReleaseFast
+Throughput is end-to-end broadcast delivery (unique events/s), including countdown bookkeeping.
+Latency is a separate saturated, instrumented run: before produce() to the handler clock read, including backpressure and queueing. Clock/sample overhead remains; this is not fixed-arrival-rate latency.
+Throughput: 102400000 events/producer/run, 3 repetitions
+  run 1: 159.888 million events/s (640.447 ms)
+  run 2: 161.767 million events/s (633.011 ms)
+  run 3: 138.588 million events/s (738.880 ms)
+Throughput: median 159.888, range [138.588, 161.767] million events/s
+Latency: 12800000 events/producer/run, 3 repetitions, 204800000 sample-storage bytes
+  run 1: p50 470 ns, p99 19387 ns (531.838 ms)
+  run 2: p50 403 ns, p99 34132 ns (495.853 ms)
+  WARNING: run shorter than calibration target (500 ms).
+  run 3: p50 505 ns, p99 35409 ns (466.612 ms)
+  WARNING: run shorter than calibration target (500 ms).
+Latency p50: median 470.0 ns, range [403.0, 505.0] ns
+Latency p99: median 34132.0 ns, range [19387.0, 35409.0] ns
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.372 MB /home/agent/src/zigrupt/benchmarks/results/batch-analysis-20261008-ngkcBP/profile-1p1c-head-b64.data (9489 samples) ]

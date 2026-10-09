@@ -1,0 +1,26 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 9K of event 'cycles:u'
+# Event count (approx.): 53917047400
+#
+# Overhead  Symbol                                                                IPC   [IPC Coverage]
+# ........  ....................................................................  ....................
+#
+    20.74%  [.] sort.block.block__anon_47784                                      -      -            
+    17.92%  [.] Thread.LinuxThreadImpl.spawn__anon_48569.Instance.entryFn         -      -            
+    17.78%  [.] Thread.LinuxThreadImpl.spawn__anon_48475.Instance.entryFn         -      -            
+    11.97%  [.] __vdso_clock_gettime                                              -      -            
+     7.61%  [.] sort.block.mergeInternal__anon_47809                              -      -            
+     6.90%  [.] Thread.LinuxThreadImpl.spawn__anon_47998.Instance.entryFn         -      -            
+     5.92%  [.] sort.block.swap__anon_47795                                       -      -            
+     4.14%  [.] Thread.LinuxThreadImpl.spawn__anon_48018.Instance.entryFn         -      -            
+     3.34%  [.] ring_buffer.Benchmark(1,false,true).handlers__struct_4250.handle  -      -            
+     1.96%  [.] Io.Threaded.now                                                   -      -            
+
+
+#
+# (Tip: To see call chains by final symbol taking CPU time (bottom up) use perf report -G)
+#

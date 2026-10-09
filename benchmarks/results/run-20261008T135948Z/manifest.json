@@ -1,0 +1,212 @@
+{
+  "started": "2026-10-08T13:59:48.419476+00:00",
+  "platform": "Linux-6.12.100+deb13-amd64-x86_64-with-glibc2.42",
+  "machine": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           39 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  8\nOn-line CPU(s) list:                     0-7\nVendor ID:                               GenuineIntel\nModel name:                              11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz\nCPU family:                              6\nModel:                                   140\nThread(s) per core:                      2\nCore(s) per socket:                      4\nSocket(s):                               1\nStepping:                                1\nCPU(s) scaling MHz:                      61%\nCPU max MHz:                             4200.0000\nCPU min MHz:                             400.0000\nBogoMIPS:                                4838.40\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l2 cdp_l2 ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves split_lock_detect user_shstk dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid movdiri movdir64b fsrm avx512_vp2intersect md_clear ibt flush_l1d arch_capabilities\nL1d cache:                               192 KiB (4 instances)\nL1i cache:                               128 KiB (4 instances)\nL2 cache:                                5 MiB (4 instances)\nL3 cache:                                8 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-7\nVulnerability Gather data sampling:      Mitigation; Microcode\nVulnerability Indirect target selection: Mitigation; Aligned branch/return thunks\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Not affected\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n",
+  "cpu_topology": [
+    {
+      "cpu": 0,
+      "core": "0",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "0,4",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    },
+    {
+      "cpu": 1,
+      "core": "1",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "1,5",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    },
+    {
+      "cpu": 2,
+      "core": "2",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "2,6",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    },
+    {
+      "cpu": 3,
+      "core": "3",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "3,7",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    },
+    {
+      "cpu": 4,
+      "core": "0",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "0,4",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    },
+    {
+      "cpu": 5,
+      "core": "1",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "1,5",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    },
+    {
+      "cpu": 6,
+      "core": "2",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "2,6",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    },
+    {
+      "cpu": 7,
+      "core": "3",
+      "socket": "0",
+      "core_type": null,
+      "capacity": null,
+      "siblings": "3,7",
+      "governor": "powersave",
+      "min_khz": "400000",
+      "max_khz": "4200000"
+    }
+  ],
+  "physical_cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "jvm_flags": [
+    "-Xms256m",
+    "-Xmx256m",
+    "-XX:+AlwaysPreTouch",
+    "-XX:+UseSerialGC",
+    "-XX:-TieredCompilation",
+    "-Xbatch",
+    "-XX:CICompilerCount=2"
+  ],
+  "build": {
+    "sources": {
+      "ziggy": {
+        "repository": "nubskr/ziggy",
+        "revision": "7c6c1cd7235f9315edc81f16a4ba7c2f061f2ba4",
+        "tree_sha256": "3348a0fc340caf663a14dfd5ff81b15324c3ade45034fbab13944a85e85b6b2b"
+      },
+      "rust": {
+        "repository": "nicholassm/disruptor-rs",
+        "version": "4.4.0",
+        "revision": "08b469143ac8e2db9bdc7c1aba0b143fefd25807",
+        "tree_sha256": "ed356f4dccfdeb8ae542ba01bffffbd5b6a05fd66b83955dae8b658940736f9a"
+      },
+      "java": {
+        "repository": "LMAX-Exchange/disruptor",
+        "version": "4.0.0",
+        "revision": "95c705f60c1833b07f1fed6e08a08d7bee7f0971",
+        "tree_sha256": "a642d065a99151db1a036b69c9ad54b6c7933488a33c11b9e6471fe575a3d727"
+      }
+    },
+    "versions": {
+      "zigrupt": "0.16.0",
+      "ziggy": "0.15.2",
+      "rustc": "rustc 1.85.0 (4d91de4e4 2025-02-17) (built from a source tarball)",
+      "cargo": "cargo 1.85.0 (d73d2caf9 2024-12-31)",
+      "jdk": "openjdk version \"21.0.5\" 2024-10-15\nOpenJDK Runtime Environment (build 21.0.5+1-nixos)\nOpenJDK 64-Bit Server VM (build 21.0.5+1-nixos, mixed mode, sharing)",
+      "gcc": "/nix/store/p6k7xp1lsfmbdd731mlglrdj2d66mr82-bash-5.2p37/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8): No such file or directory\ngcc (GCC) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+      "python": "Python 3.12.8"
+    },
+    "adapter_sha256": {
+      "native.zig": "80e259270571f770911181a0a793c8b5a0eb856bbd1d3b5e557a7632e2e18a68",
+      "platform.c": "8d6eb846d0e52e9dc8ea29e3bd7506b6b65e056ef28afbfc97e1b1c24c27cc88",
+      "rust/src/main.rs": "7d74da072bc68cc7ffac208d14d12b8ad7b6139ac5ea71c84023109bfaa8f653",
+      "rust/build.rs": "b10e6f8fa9b773ae545bdd94d21bae104cba4733c10f186e85a99d779bbc2b30",
+      "rust/Cargo.toml": "86f601bcc1bf111cdc66e4a71fbdb08bfa0cfe7272de7626b9b8ea2aacc115da",
+      "rust/Cargo.lock": "d7cd7699caf1657e83bb98cd435d2de8c6c71dd1cc40d5d095e9c8edbf642750",
+      "java/Bench.java": "cff65af0b98116442d5b9a8c2c67cef793704b40bcc9aff2df4659ce02d231c1"
+    },
+    "zigrupt_commit": "f9391aeaaaae9306ea93380b9f071508133aaa61",
+    "zigrupt_source_sha256": "b510d2a9bf53ec0bbfda1e20a149f0c2ec04de71a079ec61047c1af78a102206",
+    "competitor_source_sha256": {
+      "ziggy": "975a12fbca91b4492d7f299d76f7fdb2a6bdc666b5f7b3959d158335cacbb64c",
+      "rust": "02d25263f70f50de1607349815ae6244e47cc719a20efd1c13a3b0577192720f",
+      "java": "a020d654217a9edaa66975f49527a4cbe574c368582b4fea03bffbfe3062ced8"
+    },
+    "build_options": {
+      "zig": "ReleaseFast -mcpu=native -fPIC -lc",
+      "rust": "opt-level=3 lto=fat codegen-units=1 panic=abort target-cpu=native",
+      "java": "javac --release 21",
+      "platform": "gcc -O3"
+    },
+    "binaries_sha256": {
+      "zigrupt": "185069639676a7beedde7d68f0a813f5b955a8969f4d378c23e287cd2d3b27fc",
+      "ziggy": "5463a710006b7348606a3044d539e3a3676656dd92927549c0c39bc59232e3e8",
+      "rust": "69cd7c02a3fff9f79cc5d6229a911b481675402ca25c4d2e005143c6ea9e0fd7",
+      "libbenchplatform.so": "e5068ab42a642bfcf3b6dd8e566febc4f536b4674e7b8202312898996b659ab4"
+    },
+    "java_classes_sha256": "c81a69818ff6ce6f0fe5a88a4eed75ddece8937b46a153e79a7c49da784fad01",
+    "java_library_classes_sha256": "4279ba590f75e4f566ea02ea4c0551145804d502c1db293d2e84538a6c1a95fd"
+  },
+  "settings": {
+    "output": "results/run-20261008T135948Z",
+    "repeats": 5,
+    "seconds": 2,
+    "warm_seconds": 3,
+    "seed": 20261007,
+    "cooldown": 0.25,
+    "timeout": 180,
+    "smoke": false,
+    "check_only": false
+  },
+  "harness_sha256": {
+    "build.py": "9c9b4b7f7bacbbb36c1bed24e0a5b380e3a0d5a6854435ec6fff104b206e2ec1",
+    "devbox.json": "0bd97cec8c2eba0543e41a4223c4d5ac391ce51d2656f8454d91ac8c038f1b03",
+    "devbox.lock": "184e52df24e43a4fa85e39dea54928dd10eb413d4693f3a9d7a948b8a58cf46b",
+    "java/Bench.java": "cff65af0b98116442d5b9a8c2c67cef793704b40bcc9aff2df4659ce02d231c1",
+    "native.zig": "80e259270571f770911181a0a793c8b5a0eb856bbd1d3b5e557a7632e2e18a68",
+    "platform.c": "8d6eb846d0e52e9dc8ea29e3bd7506b6b65e056ef28afbfc97e1b1c24c27cc88",
+    "report.py": "812c032046fbb1d715ec4ec120bc8a73480f4f83c477468159e0b682cd9c8093",
+    "run.py": "88856604b8f2c532fb44b727c4dbaef55af633ff5d064891401695b6a69f17d2",
+    "rust/Cargo.lock": "d7cd7699caf1657e83bb98cd435d2de8c6c71dd1cc40d5d095e9c8edbf642750",
+    "rust/build.rs": "b10e6f8fa9b773ae545bdd94d21bae104cba4733c10f186e85a99d779bbc2b30",
+    "rust/src/main.rs": "7d74da072bc68cc7ffac208d14d12b8ad7b6139ac5ea71c84023109bfaa8f653",
+    "sources.json": "c88601c1edf87f37eaddd848ef9d380da1e3d60bdba4752d860a4181ee573654",
+    "tests/rss_probe.c": "0d1120d8d2650af953d7d2c6b983ff3a42605e80000a270fa87c1d7bb7bf89b6",
+    "tests/test_notebook.py": "4e6e4e6215c562bad46673e8c70cc41d5d20bb7b14a30d4580e161dc4a5049c2",
+    "tests/test_results.py": "6df3fb0fd28a24b375e6d812a2dab53505a74f0aaa0e50ec601d119fcca0be53",
+    "tests/test_suite.py": "a9e097a2e3929cfed61d35ab2804ccf5928ef3e958dbb74f750ea98871dc7e38",
+    "ziggy/devbox.json": "09c33a9e2fa7a7990e8d184c200ddc2090e2e0cb38241eafb4cb10eab69efb84",
+    "ziggy/devbox.lock": "8cf1fcc6eaa0634799d3d495b339989156e69dcd2b1b569ecdf16235a0f8c139"
+  },
+  "loadavg_start": [
+    1.59716796875,
+    1.50439453125,
+    1.29345703125
+  ],
+  "finished": "2026-10-08T14:51:05.430943+00:00",
+  "loadavg_end": [
+    3.85595703125,
+    3.68310546875,
+    3.63232421875
+  ]
+}

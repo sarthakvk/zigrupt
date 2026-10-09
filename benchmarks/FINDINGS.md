@@ -1,4 +1,10 @@
-# Findings: current EventBus baseline
+# Findings: historical EventBus baseline (2026-10-07)
+
+**Not a measurement of current `origin/main`.** This preserved baseline predates
+the cached sequencers, specialized single-producer path and batch-consumption
+API. The observations and follow-up hypotheses below refer only to the source
+snapshot in `results/baseline/manifest.json`. The current adapter enables native
+consumer batching up to ring capacity; fresh runs are required to assess it.
 
 **Zigrupt does not beat these competitors on saturated throughput in this run.**
 Of 20 applicable measured Zigrupt/competitor comparisons, **16 are losses, four

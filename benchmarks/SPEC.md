@@ -69,7 +69,7 @@ Native behavior is preserved, not normalized away:
 
 | Implementation | Consumer behavior | Producer backpressure |
 |---|---|---|
-| Zigrupt | BusySpin; publication test and consumer-sequence release per event | BusySpin; checks all gating consumers |
+| Zigrupt | BusySpin (empty wait); available contiguous slices, `max_batch_size = capacity`; consumer-sequence release per returned batch | Native single-/multi-producer sequencers with cached gating progress; BusySpin when full |
 | Java | BusySpinWaitStrategy (`Thread.onSpinWait`); native BatchEventProcessor batches available events and releases its sequence per batch | Native sequencers use `LockSupport.parkNanos(1)` when full; actual OS parking can be much longer |
 | Rust | BusySpin (empty wait); native handler loop batches available events and releases its cursor per batch | Native tight retry loop; cached consumer progress |
 | Ziggy | `tryConsume()` with a spin hint on empty; one dequeue per call | Native hints and yield after 256 slot-mismatch spins; CAS retries preserved |
@@ -78,7 +78,23 @@ Sources: the pinned `src/ring_buffer.zig`; Java `BatchEventProcessor.java`,
 `SingleProducerSequencer.java`, `MultiProducerSequencer.java`,
 `BusySpinWaitStrategy.java`; Rust `consumer.rs`, `producer/single.rs`,
 `producer/multi.rs`, `wait_strategies.rs`; Ziggy `src/ring_buffer.zig`.
-No explicit batch-size cap or artificial sequence flush is added.
+No artificial sequence flush or batch-size limit below the ring capacity is added.
+Zigrupt's required `max_batch_size` is set to the capacity, not `1`: Java and
+Rust already amortize acknowledgements over available events. Zigrupt may split
+batches at physical ring wrap; that is native library behavior, not a harness cap.
+Its callback handles every event in the slice and returns the full slice length.
+It does not wait for a batch to fill. Checksums, order checks and latency clocks
+remain **per event**, not per batch, for all implementations. Producer batching
+remains disabled for everyone. The native adapter reports `max_batch_size` in
+raw results; correctness-only Zigrupt runs also report each consumer's
+`max_observed_batch`, without adding batch counters to measured runs. The runner
+rejects Zigrupt samples whose configured limit differs from capacity and requires
+observed multi-event callbacks at the held consumer during correctness preflight.
+
+This compares each library's native API under equivalent application work, not
+identical machine instructions. Compiler optimization, Java's object layout/JIT,
+callback conventions, wrap handling and native wait/backoff behavior can still
+affect results; none is evidence of an isolated synchronization cost.
 
 ## Lifecycle and timing
 
@@ -204,6 +220,9 @@ publication calls, waits another 20 sleeps, and verifies:
 No artificial delay appears in ranked runs. Separate adapter tests enable the
 same stall in **latency mode** and require a visible >20 ms p99 tail at the slow
 consumer, verifying that backpressure is included rather than resetting the schedule.
+Zigrupt adapter tests also exercise every workload with non-ring-aligned phase
+counts, require capacity-sized configuration and observed multi-event callbacks,
+and validate complete delivery across wraps and partial final batches.
 Crashes/timeouts/validation failures are retained as invalid, and cannot produce
 ranked results. These tests do not attempt to prove arbitrary sequence-counter
 integer overflow; "wraparound" here means repeated ring-slot reuse.

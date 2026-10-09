@@ -1,0 +1,20 @@
+Placement (8 available logical CPUs):
+  producer 0: CPU 0
+  producer 1: CPU 1
+  consumer 0: CPU 2
+  consumer 1: CPU 3
+CPU IDs are logical: distinct IDs may still share an SMT core. Coordinator parks during measurement.
+Ring buffer: 2 producers, 2 consumers, busy spin, capacity 1024, max batch 1, ReleaseFast
+Throughput is end-to-end broadcast delivery (unique events/s), including countdown bookkeeping.
+Latency is a separate saturated, instrumented run: before produce() to the handler clock read, including backpressure and queueing. Clock/sample overhead remains; this is not fixed-arrival-rate latency.
+Throughput: 3200000 events/producer/run, 3 repetitions
+  run 1: 10.383 million events/s (616.418 ms)
+  run 2: 10.266 million events/s (623.427 ms)
+  run 3: 10.093 million events/s (634.105 ms)
+Throughput: median 10.266, range [10.093, 10.383] million events/s
+Latency: 3200000 events/producer/run, 3 repetitions, 204800000 sample-storage bytes
+  run 1: p50 558 ns, p99 884 ns (615.310 ms)
+  run 2: p50 502 ns, p99 809 ns (549.494 ms)
+  run 3: p50 500 ns, p99 848 ns (553.624 ms)
+Latency p50: median 502.0 ns, range [500.0, 558.0] ns
+Latency p99: median 848.0 ns, range [809.0, 884.0] ns

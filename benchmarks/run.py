@@ -145,6 +145,14 @@ class Runner:
                 raise RuntimeError(f"exit {process.returncode}: {process.stderr[-3000:]}")
             result = json.loads(process.stdout)
             validate(result, w, warm, count, rate)
+            if impl == "zigrupt":
+                if result.get("max_batch_size") != w.capacity:
+                    raise ValueError("Zigrupt consumer batch limit must equal ring capacity")
+                if mode == "check" and (
+                    not all(1 <= c.get("max_observed_batch", 0) <= w.capacity for c in result["consumers"])
+                    or result["consumers"][-1].get("max_observed_batch", 0) <= 1
+                ):
+                    raise ValueError("Missing native consumer batching evidence")
             record.update(result)
             record["events_per_second"] = count * 1e9 / result["elapsed_ns"]
             record["deliveries_per_second"] = w.consumers * record["events_per_second"]

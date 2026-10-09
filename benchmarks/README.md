@@ -2,6 +2,9 @@
 
 Benchmarks the current **`src/ring_buffer.zig` EventBus**, Java Disruptor 4.0.0,
 disruptor-rs 4.4.0, and the pinned Ziggy channel. Production code is unchanged.
+Zigrupt uses available-event consumer batching with `max_batch_size = capacity`,
+not a one-event cap; Java and Rust retain their native consumer batching. All
+implementations still publish and perform validation/latency work per event.
 
 - [Specification](SPEC.md): exact workload, measurement boundaries and caveats.
 - [Measured report](results/baseline/REPORT.md): throughput, latency, resources,
@@ -43,6 +46,12 @@ Output paths are relative to `benchmarks/`. The runner **refuses to overwrite an
 existing output directory**. It also refuses stale adapters/binaries or a
 Zigrupt source tree changed since the build. Builds verify competitors against
 both commit IDs and source-tree hashes in `sources.json` and honor `rust/Cargo.lock`.
+
+**The checked-in baseline and findings are historical:** they predate the cached
+sequencers and batch-consumption changes merged from `origin/main`. Their source
+hashes remain in the saved manifest; they do not describe current performance.
+Rebuild and collect a new run before making comparisons. Old raw data is retained,
+not rewritten or mixed with new samples.
 
 The checked-in baseline used:
 
