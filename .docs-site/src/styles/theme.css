@@ -1,0 +1,42 @@
+/* GitHub Dark Colorblind palette, matching the code block theme. */
+:root {
+  --sl-color-white: #f0f6fc;
+  --sl-color-gray-1: #c9d1d9;
+  --sl-color-gray-2: #b1bac4;
+  --sl-color-gray-3: #8b949e;
+  --sl-color-gray-4: #6e7681;
+  --sl-color-gray-5: #30363d;
+  --sl-color-gray-6: #21262d;
+  --sl-color-black: #0d1117;
+
+  --sl-color-accent-low: #0c2d6b;
+  --sl-color-accent: #1f6feb;
+  --sl-color-accent-high: #79c0ff;
+
+  --sl-color-text-accent: #58a6ff;
+  --sl-color-bg-nav: #010409;
+  --sl-color-bg-sidebar: #010409;
+  --sl-color-bg-inline-code: #6e768166;
+}
+
+/* GitHub Light Colorblind palette for Starlight's light mode. */
+:root[data-theme="light"] {
+  --sl-color-white: #1f2328;
+  --sl-color-gray-1: #24292f;
+  --sl-color-gray-2: #57606a;
+  --sl-color-gray-3: #6e7781;
+  --sl-color-gray-4: #8c959f;
+  --sl-color-gray-5: #d0d7de;
+  --sl-color-gray-6: #eaeef2;
+  --sl-color-gray-7: #f6f8fa;
+  --sl-color-black: #ffffff;
+
+  --sl-color-accent-low: #ddf4ff;
+  --sl-color-accent: #0969da;
+  --sl-color-accent-high: #0a3069;
+
+  --sl-color-text-accent: #0969da;
+  --sl-color-bg-nav: #f6f8fa;
+  --sl-color-bg-sidebar: #f6f8fa;
+  --sl-color-bg-inline-code: #afb8c133;
+}

@@ -1,0 +1,30 @@
+---
+import DefaultSiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
+
+const tags = JSON.parse(process.env.DOCS_VERSIONS || '[]');
+const current = process.env.DOCS_VERSION || 'main';
+const versions = [{ label: 'main', href: '/' }, ...tags.map((tag) => ({
+  label: tag,
+  href: `/${tag}/`,
+}))];
+---
+
+<div class="site-heading">
+  <DefaultSiteTitle />
+  {versions.length > 1 && (
+    <details class="versions">
+      <summary aria-label={`Documentation version: ${current}`}>{current}</summary>
+      <ul>
+        {versions.map(({ label, href }) => <li><a href={href} aria-current={label === current ? 'page' : undefined}>{label}</a></li>)}
+      </ul>
+    </details>
+  )}
+</div>
+
+<style>
+  .site-heading { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+  .versions { position: relative; flex: none; font-size: var(--sl-text-sm); }
+  .versions summary { cursor: pointer; color: var(--sl-color-text-accent); }
+  .versions ul { position: absolute; z-index: 10; margin: 0.25rem 0 0; padding: 0.4rem 0.8rem; min-width: 7rem; list-style: none; background: var(--sl-color-bg-nav); border: 1px solid var(--sl-color-hairline); border-radius: 0.4rem; box-shadow: var(--sl-shadow-md); }
+  .versions li + li { margin-top: 0.35rem; }
+</style>

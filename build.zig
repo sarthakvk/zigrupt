@@ -10,6 +10,24 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
+    const examples_step = b.step("examples", "Compile all usage examples");
+    const check_examples = b.step("check-examples", "Run all usage examples and verify their results");
+    inline for (.{ "basic", "broadcast", "multi_producer", "batching", "context", "waiting_strategy" }) |name| {
+        const example = b.addExecutable(.{
+            .name = name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("examples/" ++ name ++ ".zig"),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{.{ .name = "zigrupt", .module = zigrupt }},
+            }),
+        });
+        examples_step.dependOn(&example.step);
+        const run = b.addRunArtifact(example);
+        check_examples.dependOn(&run.step);
+        b.step("example-" ++ name, "Run the " ++ name ++ " example").dependOn(&run.step);
+    }
+
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = zigrupt })).step);
 
