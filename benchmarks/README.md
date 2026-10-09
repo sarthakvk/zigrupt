@@ -25,7 +25,7 @@ measurements, not a universal ranking.
 
 ## Output
 
-A full run writes two files in its output directory:
+A full run writes two CSV files in its output directory:
 
 - `throughput.csv`: correctness checks, calibration, blocked cases, and one row
   per saturated throughput repeat. `events_per_second` counts unique events
@@ -43,6 +43,11 @@ is measured from scheduled arrival through the consumer clock read, including
 producer backpressure and queueing. The benchmark validates counts, checksums,
 order, wraparound, and slow-consumer backpressure before measuring.
 
+Open the single `benchmarks/visualize.ipynb` template to analyze a run. It uses
+the optional packages in `notebook-requirements.txt`. Set `DATA_DIR` in its
+first code cell to the desired result directory. The notebook shows coverage
+and failures alongside throughput, latency, achieved rate, CPU, and memory
+plots. It also handles check-only runs without measurement data.
+
 The adapters are `zig/native.zig`, `rust/src/main.rs`, and `java/Bench.java`; `run.py`
-coordinates all workloads. `visualize.ipynb` is left for a later update to the
-CSV format.
+coordinates all workloads.
