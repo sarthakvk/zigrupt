@@ -9,6 +9,12 @@ export default defineConfig({
     starlight({
       title: "zigrupt",
       description: "A Disruptor-inspired event bus for Zig",
+      logo: {
+        src: "../docs/assets/zigrupt_logo.png",
+        alt: "Zigrupt",
+        replacesTitle: true,
+      },
+      favicon: "/favicon.png",
       social: [
         {
           icon: "github",

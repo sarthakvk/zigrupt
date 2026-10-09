@@ -3,6 +3,8 @@ title: Zigrupt
 description: A high-performance event broadcasting library for Zig.
 ---
 
+![Zigrupt logo](assets/zigrupt_logo.png)
+
 Zigrupt is a high-performance event broadcasting library for Zig, heavily
 inspired by the original [LMAX Disruptor](https://github.com/LMAX-Exchange/disruptor).
 It lets application threads publish events once and have multiple handlers

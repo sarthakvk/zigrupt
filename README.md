@@ -1,5 +1,9 @@
 # zigrupt
 
+<p align="center">
+  <img src="docs/assets/zigrupt_logo.png" alt="Zigrupt logo" width="480">
+</p>
+
 A Disruptor-inspired event bus for Zig. Producers publish into a fixed-capacity
 ring buffer; independent handlers each receive the same ordered stream. It is
 useful when several consumers need every event and the slowest consumer should
