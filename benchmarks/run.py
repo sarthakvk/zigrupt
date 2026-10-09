@@ -20,7 +20,7 @@ from typing import Any
 import build as benchmark_build
 from build import BIN, ROOT, adapter_hashes, tree_hash
 
-IMPLEMENTATIONS = ("zigrupt", "java", "rust", "ziggy")
+IMPLEMENTATIONS = ("zigrupt", "java", "rust")
 TOPOLOGIES = ((1, 1), (4, 1), (1, 3), (3, 3))
 LATENCY_FRACTIONS = (0.5, 0.6, 0.7, 0.8, 0.9, 0.95)
 JVM_FLAGS = [
@@ -81,10 +81,6 @@ class Workload:
     @property
     def key(self) -> str:
         return f"{self.producers}p{self.consumers}c-{self.capacity}-{self.payload}b"
-
-    @property
-    def implementations(self) -> tuple[str, ...]:
-        return IMPLEMENTATIONS if self.consumers == 1 else IMPLEMENTATIONS[:-1]
 
 
 def workloads() -> list[Workload]:
@@ -317,9 +313,7 @@ class Runner:
             record["events_per_second"] = count * 1e9 / result["elapsed_ns"]
             record["deliveries_per_second"] = w.consumers * record["events_per_second"]
             record["cpu_cores"] = result["cpu_ns"] / result["elapsed_ns"]
-            if mode == "check" and result["blocked_publications"] != w.capacity + (
-                impl == "ziggy"
-            ):
+            if mode == "check" and result["blocked_publications"] != w.capacity:
                 raise ValueError("Missing slow-consumer backpressure evidence")
         except (subprocess.TimeoutExpired, RuntimeError, ValueError, KeyError) as error:
             record["valid"] = False
@@ -330,25 +324,37 @@ class Runner:
         return record
 
 
-def build_issue() -> str | None:
+def build_issue(standalone: bool = False) -> str | None:
     metadata = BIN / "build.json"
     if not metadata.exists():
         return "build metadata is missing"
     build = json.loads(metadata.read_text())
+    if not standalone and build.get("standalone"):
+        return "full suite binaries are missing"
     if build["zigrupt_source_sha256"] != tree_hash(ROOT.parent / "src"):
         return "Zigrupt source changed"
-    if build["adapter_sha256"] != adapter_hashes():
+    expected_adapters = adapter_hashes(standalone)
+    if any(
+        build["adapter_sha256"].get(name) != digest
+        for name, digest in expected_adapters.items()
+    ):
         return "benchmark adapter changed"
-    for name, expected in build["binaries_sha256"].items():
+    required_binaries = (
+        ("zigrupt",) if standalone else ("zigrupt", "rust", "libbenchplatform.so")
+    )
+    for name in required_binaries:
+        expected = build["binaries_sha256"].get(name)
         binary = BIN / name
         if (
-            not binary.exists()
+            expected is None
+            or not binary.exists()
             or hashlib.sha256(binary.read_bytes()).hexdigest() != expected
         ):
             return f"binary changed or is missing: {name}"
-    if build["java_classes_sha256"] != tree_hash(BIN / "java-adapter") or build[
-        "java_library_classes_sha256"
-    ] != tree_hash(BIN / "java-library"):
+    if not standalone and (
+        build.get("java_classes_sha256") != tree_hash(BIN / "java-adapter")
+        or build.get("java_library_classes_sha256") != tree_hash(BIN / "java-library")
+    ):
         return "Java classes changed"
     return None
 
@@ -400,6 +406,11 @@ def main() -> None:
         action="store_true",
         help="run correctness checks without performance measurements",
     )
+    parser.add_argument(
+        "--standalone",
+        action="store_true",
+        help="benchmark Zigrupt alone using the same adapter and measurements",
+    )
     args = parser.parse_args()
     if (
         args.repeats < 3
@@ -411,21 +422,24 @@ def main() -> None:
         parser.error(
             "Use at least three repeats, positive durations and timeout, and nonnegative cooldown"
         )
+    selected_implementations = (
+        IMPLEMENTATIONS[:1] if args.standalone else IMPLEMENTATIONS
+    )
     output = (ROOT / args.output).resolve()
     if output.exists():
         parser.error(f"output directory already exists: {output}")
-    issue = build_issue()
+    issue = build_issue(args.standalone)
     if issue:
         print(f"Building benchmarks ({issue})...", flush=True)
-        benchmark_build.main()
-        issue = build_issue()
+        benchmark_build.main(standalone=args.standalone)
+        issue = build_issue(args.standalone)
         if issue:
             raise RuntimeError(f"Benchmark build is still invalid: {issue}")
     cpus = physical_cpus(cpu_topology())
     output.mkdir(parents=True, exist_ok=False)
     runner = Runner(output, cpus, args)
     rng = random.Random(args.seed)
-    jobs = [(w, impl) for w in workloads() for impl in w.implementations]
+    jobs = [(w, impl) for w in workloads() for impl in selected_implementations]
     rng.shuffle(jobs)
     checks: dict[tuple[str, str], bool] = {}
     print(f"Checking {len(jobs)} workloads...", flush=True)
@@ -499,7 +513,7 @@ def main() -> None:
     rates: dict[str, dict[str, Any]] = {}
     for w in workloads():
         per_impl: dict[str, float] = {}
-        for impl in w.implementations:
+        for impl in selected_implementations:
             runs = [
                 r
                 for r in runner.results
@@ -509,7 +523,7 @@ def main() -> None:
             ]
             if len(runs) == args.repeats and all(r["valid"] for r in runs):
                 per_impl[impl] = statistics.median(r["events_per_second"] for r in runs)
-        if len(per_impl) == len(w.implementations):
+        if len(per_impl) == len(selected_implementations):
             slowest = min(per_impl.values())
             rates[w.key] = {
                 "saturation_medians": per_impl,

@@ -1,5 +1,4 @@
 const std = @import("std");
-const config = @import("config");
 const library = @import("library");
 const Atomic = std.atomic.Value;
 const allocator = std.heap.page_allocator;
@@ -55,7 +54,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             pub fn wait() void {}
         };
         const handlers = [_]*const fn ([]const Event) usize{ handle0, handle1, handle2 };
-        const Bus = if (config.ziggy) library.RingBuffer(Event) else library.EventBus(Event, producers > 1, handlers[0..consumers], BusySpin, BusySpin);
+        const Bus = library.EventBus(Event, producers > 1, handlers[0..consumers], BusySpin, BusySpin);
         const Consumer = struct {
             count: usize align(128) = 0,
             sum: u64 = 0,
@@ -147,20 +146,13 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
                     var event: Event = undefined;
                     inline for (0..words) |j| event[j] = id + j;
                     if (args.check and round == 2) _ = attempted.fetchAdd(1, .monotonic);
-                    if (config.ziggy) bus.produce(event) else bus.produce(event) catch @panic("publish failed");
+                    bus.produce(event) catch @panic("publish failed");
                     if (args.check and round == 2) _ = published.fetchAdd(1, .release);
                 }
                 _ = producer_done.fetchAdd(1, .release);
             }
             // Keep teardown out of process CPU and completion measurements.
             while (phase.load(.acquire) != 3) bench_sleep();
-        }
-
-        fn poll() void {
-            bench_pin(args.cpus[producers]);
-            while (states[0].count < args.warm + args.count) {
-                if (bus.tryConsume()) |event| handle(0, event) else std.atomic.spinLoopHint();
-            }
         }
 
         fn waitDone(target: usize, produced: usize) void {
@@ -199,13 +191,9 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             };
             // Java and Rust acknowledge available batches natively. Do not cap
             // Zigrupt at one event or wait for a full batch before consuming.
-            bus = if (config.ziggy)
-                try Bus.init(RingAllocator.value, @intCast(args.capacity))
-            else
-                try Bus.init(RingAllocator.value, args.capacity, args.capacity);
+            bus = try Bus.init(RingAllocator.value, args.capacity, args.capacity);
             defer bus.deinit();
-            var polling_thread: ?std.Thread = null;
-            if (config.ziggy) polling_thread = try std.Thread.spawn(.{}, poll, .{}) else try bus.start();
+            try bus.start();
             var threads: [producers]std.Thread = undefined;
             for (&threads, 0..) |*thread, pid| thread.* = try std.Thread.spawn(.{}, publish, .{pid});
             while (ready.load(.acquire) < producers) bench_sleep();
@@ -240,19 +228,19 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             const rss = bench_rss();
             phase.store(3, .release);
             for (threads) |thread| thread.join();
-            if (config.ziggy) polling_thread.?.join() else try bus.stop();
+            try bus.stop();
             const total: u64 = args.warm + args.count;
             const expected = words *% (total *% (total - 1) / 2) +% total *% (words * (words - 1) / 2);
             for (&states) |*s| {
                 if (s.count != total or s.sum != expected or s.hash != states[0].hash) @panic("invalid delivery");
                 if (args.check and !std.mem.eql(u64, s.trace, states[0].trace)) @panic("broadcast order mismatch");
             }
-            _ = printf("{\"warm_elapsed_ns\":%llu,\"max_batch_size\":%zu,", warm_elapsed, if (config.ziggy) @as(usize, 1) else args.capacity);
+            _ = printf("{\"warm_elapsed_ns\":%llu,\"max_batch_size\":%zu,", warm_elapsed, args.capacity);
             _ = printf("\"valid\":true,\"elapsed_ns\":%llu,\"cpu_ns\":%llu,\"peak_rss_bytes\":%llu,\"ring_requested_bytes\":%zu,\"measurement_bytes\":%zu,\"steady_allocations\":%zu,\"blocked_publications\":%zu,\"consumers\":[", end - start, cpu_end - cpu_start, rss, RingAllocator.bytes, consumers * (if (args.rate > 0) @as(usize, 65536 * 8) else 0), allocs, blocked);
             for (&states, 0..) |*s, cid| {
                 if (cid != 0) _ = printf(",");
                 _ = printf("{\"count\":%zu,\"checksum\":%llu,\"order_hash\":%llu", s.count, s.sum, s.hash);
-                if (args.check and !config.ziggy) _ = printf(",\"max_observed_batch\":%zu", s.max_observed_batch);
+                if (args.check) _ = printf(",\"max_observed_batch\":%zu", s.max_observed_batch);
                 if (args.rate > 0) _ = printf(",\"samples\":%zu,\"p50_ns\":%llu,\"p99_ns\":%llu,\"p999_ns\":%llu", args.count, percentile(s.histogram, args.count, 500), percentile(s.histogram, args.count, 990), percentile(s.histogram, args.count, 999));
                 _ = printf("}");
             }
@@ -262,16 +250,10 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
 }
 
 fn dispatch(comptime words: usize, p: usize, c: usize, args: Args) !void {
-    if (config.ziggy) {
-        if (c != 1) return error.UnsupportedTopology;
-        if (p == 1) return Harness(words, 1, 1).run(args);
-        if (p == 4) return Harness(words, 4, 1).run(args);
-    } else {
-        if (p == 1 and c == 1) return Harness(words, 1, 1).run(args);
-        if (p == 4 and c == 1) return Harness(words, 4, 1).run(args);
-        if (p == 1 and c == 3) return Harness(words, 1, 3).run(args);
-        if (p == 3 and c == 3) return Harness(words, 3, 3).run(args);
-    }
+    if (p == 1 and c == 1) return Harness(words, 1, 1).run(args);
+    if (p == 4 and c == 1) return Harness(words, 4, 1).run(args);
+    if (p == 1 and c == 3) return Harness(words, 1, 3).run(args);
+    if (p == 3 and c == 3) return Harness(words, 3, 3).run(args);
     return error.UnsupportedTopology;
 }
 

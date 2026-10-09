@@ -1,9 +1,4 @@
 {
-  "ziggy": {
-    "repository": "nubskr/ziggy",
-    "revision": "7c6c1cd7235f9315edc81f16a4ba7c2f061f2ba4",
-    "tree_sha256": "3348a0fc340caf663a14dfd5ff81b15324c3ade45034fbab13944a85e85b6b2b"
-  },
   "rust": {
     "repository": "nicholassm/disruptor-rs",
     "version": "4.4.0",

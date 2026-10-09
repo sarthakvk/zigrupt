@@ -1,4 +1,4 @@
-"""Fetch pinned source archives and build the four unmodified implementations."""
+"""Build Zigrupt and, for suite runs, the pinned Java and Rust implementations."""
 
 from __future__ import annotations
 
@@ -26,10 +26,10 @@ ADAPTER_FILES = (
 )
 
 
-def adapter_hashes() -> dict[str, str]:
+def adapter_hashes(standalone: bool = False) -> dict[str, str]:
     return {
         name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
-        for name in ADAPTER_FILES
+        for name in (ADAPTER_FILES[:2] if standalone else ADAPTER_FILES)
     }
 
 
@@ -78,32 +78,21 @@ def fetch(name: str, source: dict[str, str]) -> None:
     marker.write_text(source["revision"] + "\n")
 
 
-def main() -> None:
+def main(standalone: bool = False) -> None:
     BIN.mkdir(exist_ok=True)
     DEPS.mkdir(exist_ok=True)
-    for name, source in SOURCES.items():
-        fetch(name, source)
-        if tree_hash(DEPS / name) != source["tree_sha256"]:
-            raise RuntimeError(f"Pinned source tree changed: {name}")
+    if not standalone:
+        for name, source in SOURCES.items():
+            fetch(name, source)
+            if tree_hash(DEPS / name) != source["tree_sha256"]:
+                raise RuntimeError(f"Pinned source tree changed: {name}")
     execute(["gcc", "-O3", "-fPIC", "-c", "platform.c", "-o", str(BIN / "platform.o")])
     execute(["ar", "rcs", str(BIN / "libplatform.a"), str(BIN / "platform.o")])
     versions: dict[str, str] = {}
-    for name in ("zigrupt", "ziggy"):
-        compiler = (
-            ["zig"]
-            if name == "zigrupt"
-            else ["devbox", "run", "-c", str(ROOT / "ziggy"), "--", "zig"]
-        )
+    for name in ("zigrupt",):
+        compiler = ["zig"]
         versions[name] = execute(compiler + ["version"])
-        config = BIN / f"{name}-config.zig"
-        config.write_text(
-            f"pub const ziggy = {'true' if name == 'ziggy' else 'false'};\n"
-        )
-        library = (
-            ROOT.parent / "src/root.zig"
-            if name == "zigrupt"
-            else DEPS / "ziggy/src/ring_buffer.zig"
-        )
+        library = ROOT.parent / "src/root.zig"
         execute(
             compiler
             + [
@@ -114,11 +103,8 @@ def main() -> None:
                 "-fPIC",
                 "-lc",
                 "--dep",
-                "config",
-                "--dep",
                 "library",
                 f"-Mroot={ROOT / 'native.zig'}",
-                f"-Mconfig={config}",
                 "-O",
                 "ReleaseFast",
                 "-mcpu=native",
@@ -140,6 +126,29 @@ def main() -> None:
                 str(BIN / name),
             ]
         )
+    if standalone:
+        for name, command in {
+            "gcc": ["gcc", "--version"],
+            "python": ["python", "--version"],
+        }.items():
+            versions[name] = execute(command, stderr=subprocess.STDOUT)
+        metadata = {
+            "standalone": True,
+            "sources": {},
+            "versions": versions,
+            "adapter_sha256": adapter_hashes(True),
+            "zigrupt_commit": execute(["git", "rev-parse", "HEAD"]),
+            "zigrupt_source_sha256": tree_hash(ROOT.parent / "src"),
+            "build_options": {
+                "zig": "ReleaseFast -mcpu=native -fPIC -lc",
+                "platform": "gcc -O3",
+            },
+            "binaries_sha256": {
+                "zigrupt": hashlib.sha256((BIN / "zigrupt").read_bytes()).hexdigest()
+            },
+        }
+        (BIN / "build.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        return
     env: dict[str, str] = dict(os.environ)
     env["RUSTFLAGS"] = "-C target-cpu=native"
     cargo = ["cargo", "build", "--release", "--manifest-path", "rust/Cargo.toml"]
@@ -198,6 +207,7 @@ def main() -> None:
     }.items():
         versions[name] = execute(command, stderr=subprocess.STDOUT)
     metadata = {
+        "standalone": False,
         "sources": SOURCES,
         "versions": versions,
         "adapter_sha256": adapter_hashes(),
@@ -214,7 +224,7 @@ def main() -> None:
         },
         "binaries_sha256": {
             name: hashlib.sha256((BIN / name).read_bytes()).hexdigest()
-            for name in ("zigrupt", "ziggy", "rust", "libbenchplatform.so")
+            for name in ("zigrupt", "rust", "libbenchplatform.so")
         },
         "java_classes_sha256": tree_hash(classes),
         "java_library_classes_sha256": tree_hash(library_classes),
