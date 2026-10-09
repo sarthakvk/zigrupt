@@ -29,6 +29,37 @@ export default defineConfig({
       expressiveCode: {
         themes: [githubDarkColorblind, githubLightColorblind],
       },
+      sidebar: [
+        { slug: "index", label: "Home" },
+        { slug: "getting-started", label: "Getting Started" },
+        { slug: "concepts", label: "Concepts" },
+        {
+          label: "Guides",
+          items: [
+            { slug: "guides/producers", label: "Producers & Broadcast" },
+            { slug: "guides/handlers", label: "Handlers & Context" },
+            { slug: "guides/ownership", label: "Event Ownership" },
+            { slug: "guides/batching", label: "Batching & Acknowledgements" },
+            { slug: "guides/waiting-strategies", label: "Waiting Strategies" },
+            { slug: "guides/lifecycle", label: "Lifecycle" },
+          ],
+        },
+        {
+          label: "Reference",
+          items: [
+            { slug: "reference/api", label: "Public API" },
+            { slug: "reference/configuration", label: "Configuration" },
+          ],
+        },
+        { slug: "performance", label: "Performance" },
+        {
+          label: "Contributing",
+          items: [
+            { slug: "contributing/workflow", label: "Contributor Workflow" },
+            { slug: "contributing/internals", label: "Implementation Tour" },
+          ],
+        },
+      ],
     }),
   ],
 });

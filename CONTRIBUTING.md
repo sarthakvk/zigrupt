@@ -67,8 +67,8 @@ check/build command, then `npm --prefix .docs-site run preview` and open the sam
 Search is indexed in the production build; validate search using that preview.
 
 Author ordinary Markdown under `docs/`, using folders for the site hierarchy.
-New pages need a title and description in frontmatter. The sidebar is generated
-from the Markdown files and folders automatically.
+New pages need a title and description in frontmatter. Add each new page to the
+ordered sidebar in `.docs-site/astro.config.mjs`.
 Use `/zigrupt/.../` links for site routes and relative paths for source assets.
 The production link check verifies pages, fragments, referenced local assets,
 CSS URLs, repository-document relative links, and the search index's presence.
