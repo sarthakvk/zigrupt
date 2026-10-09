@@ -76,7 +76,7 @@ referenced data alive through consumption, and stop before `deinit()`.
 
 - [Full documentation source](docs/index.md), [concepts](docs/concepts.md), and [API reference](docs/reference/api.md).
 - [Executable examples](examples/README.md) and [existing behavior tests](test/): `zig build test`.
-- [Benchmark methodology and caveats](bench/README.md): `zig build bench`.
+- [Benchmark methodology and caveats](benchmarks/README.md): `devbox run bench --standalone --smoke` for a short Zig-only check on Linux.
 - [Contributing](CONTRIBUTING.md), including formatting, installation verification, and documentation checks.
 - [Documentation preview/build instructions](CONTRIBUTING.md#documentation-workflow). A GitHub Pages configuration is prepared; no published documentation URL is assumed until hosting is enabled and deployment succeeds.
 - [MIT license](LICENSE).

@@ -72,7 +72,7 @@ for (const file of files) {
 }
 
 // Check repository-facing relative Markdown links without needing a hosted site.
-for (const name of ['README.md', 'CONTRIBUTING.md', 'examples/README.md', 'bench/README.md']) {
+for (const name of ['README.md', 'CONTRIBUTING.md', 'examples/README.md', 'benchmarks/README.md']) {
   const file = resolve(root, name);
   const prose = readFileSync(file, 'utf8').replace(/^```[^\n]*\n[\s\S]*?^```/gm, '');
   for (const match of prose.matchAll(/!?\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)) {

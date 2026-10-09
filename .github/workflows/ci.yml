@@ -16,7 +16,7 @@ jobs:
         with:
           version: 0.16.0
       - name: Formatting
-        run: zig fmt --check build.zig build.zig.zon src test bench examples
+        run: zig fmt --check build.zig build.zig.zon src test examples
       - name: Existing tests
         run: zig build test --summary all
       - name: Executable examples

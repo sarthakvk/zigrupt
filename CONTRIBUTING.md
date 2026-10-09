@@ -20,7 +20,7 @@ exact site dependencies in `.docs-site/package.json` and `.docs-site/package-loc
 From the repository root:
 
 ```sh
-zig fmt --check build.zig build.zig.zon src test bench examples
+zig fmt --check build.zig build.zig.zon src test examples
 zig build test --summary all
 zig build check-examples --summary all
 python3 scripts/check-install.py
@@ -41,13 +41,12 @@ Node dependencies and generated site assets are excluded from the Zig package.
 ## Benchmarks
 
 ```sh
-zig build test-bench
-zig build bench -- --events_per_publisher=1000 --repetitions=2 --min_duration_ms=1
-zig build bench -- --publishers=2 --consumers=2 --max_batch=8
+devbox run bench --standalone --smoke
+devbox run bench --help
 ```
 
 The short run is only a functional check. Read
-[bench/README.md](https://github.com/sarthakvk/zigrupt/blob/main/bench/README.md)
+[benchmarks/README.md](https://github.com/sarthakvk/zigrupt/blob/main/benchmarks/README.md)
 for measurement boundaries, placement, calibration, and latency caveats. Report
 hardware, Zig version, flags, CPU mapping, and repeated results when discussing
 performance changes.
