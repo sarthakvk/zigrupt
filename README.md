@@ -4,10 +4,12 @@
   <img src="docs/assets/zigrupt_logo.png" alt="Zigrupt logo" width="480">
 </p>
 
-A Disruptor-inspired event bus for Zig. Producers publish into a fixed-capacity
-ring buffer; independent handlers each receive the same ordered stream. It is
-useful when several consumers need every event and the slowest consumer should
-apply backpressure to producers.
+Zigrupt is a high-performance event broadcasting library for Zig, heavily
+inspired by the original [LMAX Disruptor](https://github.com/LMAX-Exchange/disruptor).
+It lets application threads publish events once and have multiple handlers
+process every event, in order, on their own threads. A fixed-capacity ring
+buffer, lock-free coordination, and attention to CPU cache lines keep the path
+between producers and handlers lean.
 
 zigrupt is under active development (package version 0.0.1). The API may change.
 The current implementation supports single/multi-producer operation, broadcast
