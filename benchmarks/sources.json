@@ -1,0 +1,14 @@
+{
+  "rust": {
+    "repository": "nicholassm/disruptor-rs",
+    "version": "4.4.0",
+    "revision": "08b469143ac8e2db9bdc7c1aba0b143fefd25807",
+    "tree_sha256": "ed356f4dccfdeb8ae542ba01bffffbd5b6a05fd66b83955dae8b658940736f9a"
+  },
+  "java": {
+    "repository": "LMAX-Exchange/disruptor",
+    "version": "4.0.0",
+    "revision": "95c705f60c1833b07f1fed6e08a08d7bee7f0971",
+    "tree_sha256": "a642d065a99151db1a036b69c9ad54b6c7933488a33c11b9e6471fe575a3d727"
+  }
+}
