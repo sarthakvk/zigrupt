@@ -1,19 +1,41 @@
 ---
-title: zigrupt
-description: A Disruptor-inspired broadcast event bus for Zig.
+title: Zigrupt
+description: A high-performance event broadcasting library for Zig.
 ---
 
-zigrupt is a Zig implementation of the LMAX Disruptor approach to passing events
-between threads: producers publish into a fixed-capacity ring, and independent
-handlers consume the same ordered stream. It can be useful when multiple parts
-of an application need to process every event, with bounded event storage and
-backpressure from consumers.
+Zigrupt is a high-performance event broadcasting library for Zig, heavily
+inspired by the original [LMAX Disruptor](https://github.com/LMAX-Exchange/disruptor).
+It lets application threads publish events once and have multiple handlers
+process every event, in order, on their own threads. A fixed-capacity ring
+buffer, lock-free coordination, and attention to CPU cache lines keep the path
+between producers and handlers lean.
 
-The library is under active development. The package currently declares version
-0.0.1 and requires Zig 0.16.0; API stability is not yet promised. These docs track
-implemented behavior on `main`. The present API is a starting point, not a limit
-on the project's direction. No full LMAX feature parity, durability, or measured
-performance advantage is implied.
+## Why broadcast?
+
+A work queue assigns an event to one worker. zigrupt gives each registered
+handler the full stream. For example, one handler can update live metrics while
+another writes an audit trail. They work independently and may finish at
+different times, but neither misses an event because the other received it.
+
+## How an event moves
+
+A producer publishes a value into the next reusable slot in the ring. Each
+publication has a sequence number, so handlers can follow the stream in order
+even after the ring wraps around. Every handler tracks which events it has
+processed and acknowledges its progress separately.
+
+The ring reuses a slot only after **all** handlers have finished with its
+previous event. If the slowest handler falls a full ring behind, producers wait
+for capacity instead of overwriting unread data. A successful publication means
+the event is available to handlers; it does not wait for them to finish.
+
+## Built for busy event streams
+
+The ring allocates a bounded set of slots up front and reuses them as events
+flow through. Atomic, lock-free coordination avoids a mutex on the publication
+path, while cache-line-aware layout reduces false sharing between threads.
+Choose single- or multi-producer mode, tune how handlers wait for new events,
+and process events in batches to match the workload and available CPU time.
 
 ## Start here
 
@@ -23,18 +45,4 @@ performance advantage is implied.
 - [Look up the public API](/zigrupt/reference/api/).
 - [Run the canonical examples](https://github.com/sarthakvk/zigrupt/tree/main/examples).
 
-## Available today
-
-Single- and multi-producer modes, one thread per registered handler, bounded
-consumer batches, consumed-prefix acknowledgements, custom waiting strategies,
-and owner-thread startup, draining, and restart are implemented. Handlers are
-selected when defining the bus type.
-
-Delivery is broadcast, not a pool in which workers divide events. The current
-API does not provide consumer dependency graphs, dynamic handler registration,
-durable storage, a bulk publishing call, or timeout/try-publish methods. These
-are descriptions of the current API, not a roadmap or permanent exclusions.
-
-See [contributing](/zigrupt/contributing/workflow/) for how to update these pages
-as capabilities evolve. The project uses the
-[MIT license](https://github.com/sarthakvk/zigrupt/blob/main/LICENSE).
+The project uses the [MIT license](https://github.com/sarthakvk/zigrupt/blob/main/LICENSE).

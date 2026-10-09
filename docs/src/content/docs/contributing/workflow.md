@@ -3,8 +3,6 @@ title: Contributor workflow
 description: Reproduce checks, edit documentation, and review publication configuration.
 ---
 
-This page is synchronized from the repository's `CONTRIBUTING.md`.
-
 <!-- include: CONTRIBUTING.md -->
 zigrupt is a growing Disruptor implementation. Keep changes focused and document
 implemented behavior as it evolves; discuss future capabilities separately from

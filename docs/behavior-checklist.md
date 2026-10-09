@@ -1,13 +1,9 @@
 # Behavior checklist
 
-Reviewed against `src/root.zig`, `src/ring_buffer.zig`,
-`src/waiting_strategy.zig`, and the existing tests on this branch. Baseline:
-Zig 0.16.0, package 0.0.1, 28/28 existing tests passing. This is an evidence
-map for maintaining the documentation as main evolves, not a frozen scope.
-
-No library source or tests are changed by this documentation task. Where a
-rule follows from source or application ownership rather than a dedicated
-test, that distinction is explicit below.
+Use this checklist to keep the documentation aligned with `src/root.zig`,
+`src/ring_buffer.zig`, `src/waiting_strategy.zig`, and the tests. The evidence
+column distinguishes tested behavior from source-derived and application
+ownership rules.
 
 | Reviewed contract | Evidence | Documentation consequence |
 | --- | --- | --- |
@@ -28,8 +24,6 @@ test, that distinction is explicit below.
 | Strategy is a type with `pub fn wait() void`, no receiver | `test/waiting_strategy.zig` and validator's function coercion | Document actual signature despite the validator's diagnostic mentioning a receiver |
 | Root exports EventBus, EventHandler, waiting_strategy, and hello | `src/root.zig` (source) | Error/state types are not root exports; do not present storage fields as configuration APIs |
 
-The six executable examples add usage verification with explicit result checks,
-not new test cases. CI retains the existing suite as behavior evidence. Future
-behavior changes should update this map, guides, reference, examples, and relevant
-tests together. Failure-path coverage above remains source-reviewed evidence,
-not a claim of a tested guarantee.
+The six executable examples check their results. When behavior changes, update
+this checklist, the relevant guides and reference pages, examples, and tests
+together. Source-derived rules in the table do not imply dedicated test coverage.

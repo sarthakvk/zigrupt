@@ -1,7 +1,7 @@
 # Documentation site
 
-The site uses Astro Starlight with ordinary Markdown and its standard navigation,
-search, highlighting, and theme controls. No custom frontend is required.
+The documentation site uses Astro Starlight, ordinary Markdown, and its built-in
+navigation, search, syntax highlighting, and theme controls.
 
 Use Node **24.18.0** (`.node-version`) and npm **11.16.0**. From the repository root:
 
@@ -11,22 +11,23 @@ npm --prefix docs run check
 npm --prefix docs run dev
 ```
 
-Open <http://localhost:4321/zigrupt/>. For the production output, use
-`npm --prefix docs run preview` after building; production preview includes search.
+Open <http://localhost:4321/zigrupt/>. To preview the production build, run
+`npm --prefix docs run preview` after building. Search is available in that preview.
 `docs/dist/`, `.astro/`, and `node_modules/` are generated and ignored by Git.
 The Zig package uses a separate file allowlist; it has no Node dependency.
 
 ## Maintaining content
 
-- Pages: `src/content/docs/`; sidebar/site/base: `astro.config.mjs`.
+- Pages: `src/content/docs/`; sidebar, site URL, and base path: `astro.config.mjs`.
 - Source of truth: implementation, existing tests, and [behavior checklist](behavior-checklist.md).
 - Code blocks: generated from `examples/` by `node docs/scripts/sync-snippets.mjs`.
 - Shared prose: generated from `bench/README.md` and `CONTRIBUTING.md` with `include` markers.
 - `npm --prefix docs run check:snippets` checks synchronization without writing.
 - `npm --prefix docs run check` checks snippets, builds, then checks internal links,
   fragments, referenced assets/CSS URLs, repository-document links, and search artifacts.
-- Browser review: preview the production build; follow sidebar and next/previous
-  navigation, search for “backpressure”, and inspect the diagram on desktop and mobile.
+- Browser review: preview the production build, follow the sidebar and
+  next/previous navigation, search for “backpressure”, and inspect the diagram
+  on desktop and mobile.
 
 Node dependencies are pinned and locked; use `npm ci` to reproduce them. When
 upgrading, update exact versions and the lockfile together, run all checks, and

@@ -4,15 +4,15 @@ description: Process an ordered prefix and acknowledge only completed work.
 ---
 
 `max_batch_size` limits how many events a handler can receive in one callback.
-It is an upper bound, not a target the bus waits to fill. A batch can be shorter
-because fewer consecutive events are published, the ring wraps, or draining
-reaches the end of the queue. Producer calls still publish one event at a time.
+It is an upper bound; the bus does not wait to fill a batch. A batch can be
+shorter when fewer consecutive events are published, the ring wraps, or draining
+reaches the end of the queue. Each producer call still publishes one event.
 
 ## Consumed prefixes
 
 For a slice of length `L`, return `n` with `0 <= n <= L`. Only events `[0..n]`
 are acknowledged. Returning `L` consumes the whole slice; a smaller value leaves
-the suffix for a later call, possibly alongside newly available events.
+the remaining events for a later call, possibly alongside newly published ones.
 Do not process the suffix and then acknowledge only the prefix: the suffix's
 side effects would be repeated. The caller must enforce the returned-count bound;
 the implementation does not validate it for you.
@@ -64,6 +64,6 @@ pub fn main() !void {
 ```
 <!-- end:examples/batching.zig -->
 
-The example deliberately retries once, then processes at most two events from
-each offered slice. It verifies final order and count without assuming a particular
-batch schedule. Prefix retry rules also apply while draining and after restart.
+The example retries once, then processes at most two events from each offered
+slice. It checks the final order and count without assuming a particular batch
+schedule. Prefix retry rules also apply while draining and after restart.

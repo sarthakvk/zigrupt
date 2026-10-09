@@ -12,10 +12,10 @@ The bus does not automatically retry failed operations or undo side effects.
 
 ## Passing context through an event
 
-The available API allows an event to carry a pointer to application context.
-This example also carries a slice backed by separately allocated storage. The
-context and bytes remain alive until both handlers finish. The shared counter
-is atomic because registering `handle` twice runs it on two different threads.
+An event can carry a pointer to application context. This example also carries
+a slice backed by separately allocated storage. The context and bytes remain
+alive until both handlers finish. The counter is atomic because the two
+registrations of `handle` run on separate threads.
 
 ```sh
 zig build example-context
@@ -67,8 +67,8 @@ synchronization for mutable shared objects.
 
 The [basic example](/zigrupt/getting-started/#first-program) uses one global
 counter owned exclusively by one handler and reads it only after `stop()` joins
-that handler. That pattern does not generalize to multiple concurrent buses or
-multiple registrations writing the same counter.
+that handler. If multiple handlers or buses write the same counter, synchronize
+those writes.
 
 See [batching](/zigrupt/guides/batching/) for consumed-prefix rules and
 [ownership](/zigrupt/guides/ownership/) for lifetime details.

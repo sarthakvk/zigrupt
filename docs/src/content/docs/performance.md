@@ -3,24 +3,23 @@ title: Performance and benchmarking
 description: Tune capacity and batching, then measure with the repository benchmark.
 ---
 
-Use representative handler work and payloads before drawing conclusions about
-an application's performance. Fixed ring storage does not eliminate allocation
-or I/O inside application handlers. Busy spinning can occupy cores while idle;
-a yielding strategy changes scheduling costs. More producer threads can also
-increase contention. No strategy or configuration is universally fastest.
+Measure with representative handlers and payloads before drawing conclusions
+about performance. Fixed ring storage does not eliminate allocation or I/O in
+handlers. Busy spinning can occupy cores while idle, while yielding changes
+scheduling costs. More producer threads can increase contention. No strategy
+or configuration is fastest for every workload.
 
-Capacity is a burst budget, not a remedy for sustained consumer lag. Batch limits
-trade callback frequency against the work performed before progress is
-acknowledged. The benchmark fixes capacity at 1,024 and accepts `--max_batch=1`
-through `--max_batch=1024` (default 1):
+Capacity provides room for bursts but cannot remedy sustained consumer lag.
+Larger batch limits can reduce callback frequency, but may increase the work
+done before a handler acknowledges progress. The benchmark uses capacity 1,024
+and accepts `--max_batch=1` through `--max_batch=1024` (default 1):
 
 ```sh
 zig build bench -- --publishers=2 --consumers=2 --max_batch=8
 ```
 
-The methodology below is synchronized from `bench/README.md`, preserving its
-measurement boundaries and caveats. Benchmark results are observations for the
-reported workload, hardware, and toolchain, not a reliability or latency guarantee.
+Interpret benchmark results in the context of the reported workload, hardware,
+and toolchain. They do not guarantee reliability or latency in an application.
 
 <!-- include: bench/README.md -->
 ```sh

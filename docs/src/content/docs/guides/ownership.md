@@ -3,10 +3,10 @@ title: Event ownership and lifetimes
 description: Understand copied values, borrowed ring slices, and shared pointees.
 ---
 
-`produce(event)` assigns an event value into preallocated ring storage. Scalars
-and inline arrays are copied as part of the value. Pointers, slices, and allocator
-handles copy only their fields: there is no deep copy, ownership transfer,
-reference counting, or automatic destructor.
+`produce(event)` copies an event value into preallocated ring storage. Scalars
+and inline arrays are copied with the value. For pointers, slices, and allocator
+handles, only their fields are copied. The bus does not copy the data they
+reference, take ownership of it, or release it automatically.
 
 ## Borrowed event slices
 
@@ -22,9 +22,9 @@ bus handlers, not tasks that your callbacks start elsewhere.
 ## Data referenced by events
 
 A producer can continue after `produce()` returns while handlers still need its
-data. In particular, a slice into a producer's temporary stack buffer is unsafe
-if the buffer is reused or goes out of scope too soon. Keep referenced storage
-alive and suitably synchronized until **all** consumers have finished using it.
+data. A slice into a producer's temporary stack buffer is unsafe if the buffer
+is reused or goes out of scope too soon. Keep referenced storage alive and
+suitably synchronized until **all** handlers have finished using it.
 For simple programs, keep storage alive through `stop()` after joining producers.
 For long-lived streams, design an application-level reclamation protocol.
 

@@ -4,11 +4,11 @@ description: Implement the zero-argument wait contract and understand where it r
 ---
 
 Pass a publisher strategy type and a consumer strategy type to `EventBus`.
-Each must expose exactly `pub fn wait() void`: a static, zero-argument function
-with no receiver or error return. No strategy instance is allocated or passed
-by the bus. The type is validated when the bus type is instantiated.
+Each must expose `pub fn wait() void`: a static, zero-argument function with no
+receiver or error return. The bus does not create or pass a strategy instance.
+It validates the strategy when forming the bus type.
 
-`waiting_strategy.BusySpin` is the current built-in strategy. Its `wait()`
+`waiting_strategy.BusySpin` is the built-in strategy. Its `wait()`
 returns immediately. Loops using it repeatedly poll, potentially occupying a
 CPU core. Choose behavior according to your latency, CPU, and scheduling needs;
 there is no universal fastest strategy.
@@ -59,7 +59,7 @@ switch or a particular delay. Compare under representative workloads.
 
 ## Where wait is called
 
-The publisher strategy runs while a claimed slot is not yet safe to reuse.
+The publisher strategy runs while a claimed slot cannot yet be reused.
 The consumer strategy runs while startup is finishing and while a running
 consumer is waiting for its next publication. It is not a callback after every
 batch, and returning zero from a handler does not invoke it. The drain loop does

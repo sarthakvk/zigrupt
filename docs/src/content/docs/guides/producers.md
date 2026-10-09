@@ -3,14 +3,14 @@ title: Producers and broadcast
 description: Select single- or multi-producer mode and join publishers before draining.
 ---
 
-The second `EventBus` argument chooses the sequencer when defining the type.
-Use `false` for one publishing thread, or `true` when multiple threads may call
-`produce()` concurrently. Lifecycle ownership and producer identity are separate:
-a worker may publish while the initializing thread owns start and stop.
+The second `EventBus` argument selects the producer mode. Use `false` for one
+publishing thread or `true` when multiple threads may call `produce()`
+concurrently. A worker can publish while the initializing thread owns startup
+and shutdown.
 
-A publication copies one event value into the ring. It can wait for capacity.
+A publication copies one event value into the ring and may wait for capacity.
 Calls from separate producers can return in a different order from the stream's
-claim order. Consumers observe the common sequence order and wait at gaps.
+claim order. Consumers observe the same sequence order and wait at gaps.
 Never use observed callback scheduling to infer cross-handler ordering.
 
 ## Independent broadcast consumers
@@ -67,9 +67,9 @@ pub fn main() !void {
 
 ## Concurrent producers
 
-Create the bus and start consumers first, then spawn producers. Join all producers
-before `stop()`. The scoped joins also cover a partial thread-spawn failure.
-Producer errors are reported after their threads join.
+Create the bus and start its handlers before spawning producers. Join every
+producer before calling `stop()`. The scoped joins also cover a partial
+thread-spawn failure. Producer errors are reported after the threads join.
 
 ```sh
 zig build example-multi_producer

@@ -3,8 +3,8 @@ title: Implementation tour
 description: Source map and sequence mechanics for contributors.
 ---
 
-This page is for contributors. Applications should rely on the
-[public API](/zigrupt/reference/api/) and [usage contracts](/zigrupt/concepts/).
+For application code, use the [public API](/zigrupt/reference/api/) and
+[usage contracts](/zigrupt/concepts/).
 
 ## Source map
 
@@ -30,7 +30,7 @@ identify which sequence occupies each slot. Claims alone do not publish data:
 consumers wait at a publication gap rather than skip to a later event.
 
 Producers cache a safe-to-write limit derived from the minimum consumer sequence.
-Progress counters are aligned to reduce sharing of cache lines. See the
+Progress counters are aligned to reduce cache-line sharing. Consult the
 write-safety cache tests before changing this path.
 
 ## Publication and acknowledgement
@@ -53,9 +53,6 @@ producer cursor after the application has completed production.
 threads, clears thread handles, and returns to `idle`; it does not reset the
 sequences. Partial startup failure uses the stop path for cleanup.
 
-The [reviewed behavior checklist](https://github.com/sarthakvk/zigrupt/blob/main/docs/behavior-checklist.md)
-links these facts to existing coverage and identifies source-only evidence.
-Keep source comments, examples, and application-facing explanations consistent
-when implementation details or supported behavior change. Reassess generated
-API documentation as the API grows; the current handwritten reference is a
-maintenance choice, not a fixed limit.
+When changing these paths, keep source comments, examples, and the
+[public API reference](/zigrupt/reference/api/) consistent with the resulting
+behavior.
