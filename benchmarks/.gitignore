@@ -6,4 +6,3 @@
 .zig-cache/
 __pycache__/
 rust/target/
-results/smoke*/
