@@ -1,5 +1,7 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import githubDarkColorblind from "./src/themes/github-dark-colorblind.json";
+import githubLightColorblind from "./src/themes/github-light-colorblind.json";
 
 export default defineConfig({
   site: "https://sarthakvk.github.io",
@@ -23,6 +25,10 @@ export default defineConfig({
         },
       ],
       components: { SiteTitle: "./src/components/SiteTitle.astro" },
+      customCss: ["./src/styles/theme.css"],
+      expressiveCode: {
+        themes: [githubDarkColorblind, githubLightColorblind],
+      },
     }),
   ],
 });
