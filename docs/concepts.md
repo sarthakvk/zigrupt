@@ -3,6 +3,12 @@ title: Concepts
 description: Ring buffers, ordered broadcast, independent handlers, and backpressure.
 ---
 
+Zigrupt draws on the design described in the
+[LMAX Disruptor paper](https://lmax-exchange.github.io/disruptor/disruptor.html)
+by Martin Thompson, Dave Farley, Michael Barker, Patricia Gee, and Andrew
+Stewart. We are grateful to the authors and the LMAX team for the ring-buffer
+and sequencing ideas behind this library.
+
 The Disruptor approach separates claiming a place in an event stream, publishing
 its value, and tracking each consumer's progress. zigrupt uses these steps to
 reuse a fixed set of event slots across threads. You do not need to understand
