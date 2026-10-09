@@ -22,6 +22,7 @@ from build import BIN, ROOT, adapter_hashes, tree_hash
 
 IMPLEMENTATIONS = ("zigrupt", "java", "rust", "ziggy")
 TOPOLOGIES = ((1, 1), (4, 1), (1, 3), (3, 3))
+LATENCY_FRACTIONS = (0.5, 0.6, 0.7, 0.8, 0.9, 0.95)
 JVM_FLAGS = [
     "-Xms256m",
     "-Xmx256m",
@@ -513,10 +514,10 @@ def main() -> None:
             rates[w.key] = {
                 "saturation_medians": per_impl,
                 "slowest": slowest,
-                "rates": {str(f): max(1, int(slowest * f)) for f in (0.5, 0.9)},
+                "rates": {str(f): max(1, int(slowest * f)) for f in LATENCY_FRACTIONS},
             }
     latency_jobs = [
-        (w, impl, f) for w, impl in eligible if w.key in rates for f in (0.5, 0.9)
+        (w, impl, f) for w, impl in eligible if w.key in rates for f in LATENCY_FRACTIONS
     ]
     for repeat in range(args.repeats):
         print(f"Latency round {repeat + 1}/{args.repeats}", flush=True)

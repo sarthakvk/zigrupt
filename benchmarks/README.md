@@ -35,11 +35,11 @@ A full run writes two files in its output directory:
 
 Both files include workload settings, validity, CPU placement, timing, CPU use,
 memory use, and available allocation or GC counters. Invalid runs remain in the
-CSV. Latency runs use offered rates of 50% and 90% of the slowest implementation's
-median saturated throughput for each workload. Latency is measured from
-scheduled arrival through the consumer clock read, including producer
-backpressure and queueing. The benchmark validates counts, checksums, order,
-wraparound, and slow-consumer backpressure before measuring.
+CSV. Latency runs use offered rates of 50%, 60%, 70%, 80%, 90%, and 95% of the
+slowest implementation's median saturated throughput for each workload. Latency
+is measured from scheduled arrival through the consumer clock read, including
+producer backpressure and queueing. The benchmark validates counts, checksums,
+order, wraparound, and slow-consumer backpressure before measuring.
 
 The adapters are `native.zig`, `rust/src/main.rs`, and `java/Bench.java`; `run.py`
 coordinates all workloads. `visualize.ipynb` is left for a later update to the
