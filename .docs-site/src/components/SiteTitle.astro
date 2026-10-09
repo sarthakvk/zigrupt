@@ -3,9 +3,9 @@ import DefaultSiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
 
 const tags = JSON.parse(process.env.DOCS_VERSIONS || '[]');
 const current = process.env.DOCS_VERSION || 'main';
-const versions = [{ label: 'main', href: '/zigrupt/' }, ...tags.map((tag) => ({
+const versions = [{ label: 'main', href: '/' }, ...tags.map((tag) => ({
   label: tag,
-  href: `/zigrupt/${tag}/`,
+  href: `/${tag}/`,
 }))];
 ---
 

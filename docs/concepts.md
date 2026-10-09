@@ -64,6 +64,6 @@ before that owner stops the bus. Share results with atomics, locks, or exclusive
 ownership followed by thread joins; the bus does not synchronize arbitrary
 application accesses outside publication and acknowledgement.
 
-See [producer modes](/zigrupt/guides/producers/),
-[batching](/zigrupt/guides/batching/), and [lifecycle](/zigrupt/guides/lifecycle/)
+See [producer modes](/guides/producers/),
+[batching](/guides/batching/), and [lifecycle](/guides/lifecycle/)
 for executable patterns.

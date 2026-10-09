@@ -96,7 +96,7 @@ events consumed from its start, between zero and the slice length. Acknowledged
 slots may be reused once every handler has passed them. The remaining suffix
 is offered again after partial or zero consumption. The bus does not validate
 the returned count.
-See [batching](/zigrupt/guides/batching/) and [ownership](/zigrupt/guides/ownership/).
+See [batching](/guides/batching/) and [ownership](/guides/ownership/).
 
 ## waiting_strategy
 
@@ -107,7 +107,7 @@ immediately returns.
 requires a `wait` declaration compatible with `fn () void` and produces a
 compile error when the contract is not met. The function takes **zero**
 arguments, even if a compiler diagnostic mentions `self`.
-See [custom waiting strategies](/zigrupt/guides/waiting-strategies/).
+See [custom waiting strategies](/guides/waiting-strategies/).
 
 ## hello
 

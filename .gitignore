@@ -9,3 +9,4 @@ zig-out/
 .docs-site/dist/
 .docs-site/.astro/
 .docs-site/scripts/__pycache__/
+.wrangler/

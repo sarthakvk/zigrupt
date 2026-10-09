@@ -7,8 +7,8 @@ import { parseHTML } from 'linkedom';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const dist = resolve(root, '.docs-site/dist');
-const origin = 'https://sarthakvk.github.io';
-const base = (process.env.DOCS_BASE || '/zigrupt').replace(/\/$/, '') + '/';
+const origin = 'https://zigrupt.sarthakvk.com';
+const base = (process.env.DOCS_BASE || '/').replace(/\/$/, '') + '/';
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
   entry.isDirectory() ? walk(resolve(dir, entry.name)) : [resolve(dir, entry.name)]);
 if (!existsSync(dist)) throw new Error('Build the documentation before checking links');

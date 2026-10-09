@@ -30,7 +30,7 @@ For long-lived streams, design an application-level reclamation protocol.
 
 Broadcast makes freeing data in the first handler unsafe: another handler may
 still need it. `deinit()` only releases allocations made by the bus. It never
-frees event pointees. The [context example](/zigrupt/guides/handlers/) shows a
+frees event pointees. The [context example](/guides/handlers/) shows a
 simple lifetime arrangement with separately owned bytes.
 
 ## Shared application state

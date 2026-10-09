@@ -65,10 +65,10 @@ make `event.context.*` immutable, prevent another producer from mutating it, or
 extend any lifetime. Use immutable data, distinct per-handler state, or explicit
 synchronization for mutable shared objects.
 
-The [basic example](/zigrupt/getting-started/#try-it) uses one global
+The [basic example](/getting-started/#try-it) uses one global
 counter owned exclusively by one handler and reads it only after `stop()` joins
 that handler. If multiple handlers or buses write the same counter, synchronize
 those writes.
 
-See [batching](/zigrupt/guides/batching/) for consumed-prefix rules and
-[ownership](/zigrupt/guides/ownership/) for lifetime details.
+See [batching](/guides/batching/) for consumed-prefix rules and
+[ownership](/guides/ownership/) for lifetime details.

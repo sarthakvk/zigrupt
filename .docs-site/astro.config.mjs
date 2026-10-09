@@ -4,8 +4,8 @@ import githubDarkColorblind from "./src/themes/github-dark-colorblind.json";
 import githubLightColorblind from "./src/themes/github-light-colorblind.json";
 
 export default defineConfig({
-  site: "https://sarthakvk.github.io",
-  base: process.env.DOCS_BASE || "/zigrupt",
+  site: "https://zigrupt.sarthakvk.com",
+  base: process.env.DOCS_BASE || "/",
   trailingSlash: "always",
   integrations: [
     starlight({

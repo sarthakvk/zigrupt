@@ -82,5 +82,5 @@ referenced data alive through consumption, and stop before `deinit()`.
 - [Executable examples](examples/README.md) and [existing behavior tests](test/): `zig build test`.
 - [Benchmark methodology and caveats](benchmarks/README.md): `devbox run bench --standalone --smoke` for a short Zig-only check on Linux.
 - [Contributing](CONTRIBUTING.md), including formatting, installation verification, and documentation checks.
-- [Documentation preview/build instructions](CONTRIBUTING.md#documentation-workflow). A GitHub Pages configuration is prepared; no published documentation URL is assumed until hosting is enabled and deployment succeeds.
+- [Published documentation](https://zigrupt.sarthakvk.com/) and [local preview/build instructions](CONTRIBUTING.md#documentation-workflow).
 - [MIT license](LICENSE).

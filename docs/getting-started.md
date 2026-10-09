@@ -57,5 +57,5 @@ zig build run
 
 This prints `42`.
 
-Continue with [concepts](/zigrupt/concepts/) and
-[event ownership](/zigrupt/guides/ownership/) before passing pointers or slices.
+Continue with [concepts](/concepts/) and
+[event ownership](/guides/ownership/) before passing pointers or slices.

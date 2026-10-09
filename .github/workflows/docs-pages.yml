@@ -7,13 +7,14 @@ on:
 
 permissions:
   contents: read
+  deployments: write
 
 concurrency:
-  group: pages
+  group: docs-production
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -29,25 +30,11 @@ jobs:
       - run: npm install --global npm@11.16.0
       - run: npm --prefix .docs-site ci
       - run: python3 .docs-site/scripts/build-versions.py
-      # Pages must already have GitHub Actions selected as its source.
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
         with:
-          enablement: false
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: .docs-site/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy documentation
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: 4.141.0
+          command: pages deploy .docs-site/dist --project-name=zigrupt --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

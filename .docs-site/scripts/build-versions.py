@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build main and documented release tags into one GitHub Pages artifact.
+"""Build main and documented release tags into one Cloudflare Pages directory.
 
 Use the current site tooling with each tag's archived docs, then validate the
 combined output's links before the publishing workflow uploads it.
@@ -59,7 +59,7 @@ def build(version, tags):
     env = os.environ.copy()
     env["DOCS_VERSION"] = version
     env["DOCS_VERSIONS"] = json.dumps(tags)
-    env["DOCS_BASE"] = "/zigrupt" if version == "main" else f"/zigrupt/{version}"
+    env["DOCS_BASE"] = "/" if version == "main" else f"/{version}"
     shutil.rmtree(SITE / ".astro", ignore_errors=True)
     run("npm", "--prefix", ".docs-site", "run", "build", env=env)
 
@@ -77,7 +77,8 @@ def source_at_tag(tag, directory):
     content = directory / content_path
     for page in content.rglob("*.md"):
         text = page.read_text()
-        page.write_text(text.replace("(/zigrupt/", f"(/zigrupt/{tag}/"))
+        # Archived docs may use the former /zigrupt/ base or the current root.
+        page.write_text(re.sub(r"\]\(/(?:zigrupt/)?", f"](/{tag}/", text))
     assets = directory / assets_path
     assets.mkdir(parents=True, exist_ok=True)
     return content, assets
@@ -86,6 +87,17 @@ def source_at_tag(tag, directory):
 def link(path, target):
     path.unlink()
     path.symlink_to(target, target_is_directory=True)
+
+
+def restore_cached_assets(main_dist):
+    # Astro can reuse an original source asset on a later build without emitting
+    # it again. Each archived base path still needs its own copy of that file.
+    shared = main_dist / "_astro"
+    archive = DIST / "_astro"
+    for asset in shared.iterdir():
+        target = archive / asset.name
+        if asset.is_file() and not target.exists():
+            shutil.copy2(asset, target)
 
 
 def main():
@@ -105,6 +117,7 @@ def main():
                 link(CONTENT, content)
                 link(ASSETS, assets)
                 build(tag, tags)
+                restore_cached_assets(combined)
                 shutil.move(DIST, combined / tag)
         finally:
             link(CONTENT, original_content)

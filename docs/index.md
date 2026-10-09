@@ -41,11 +41,11 @@ and process events in batches to match the workload and available CPU time.
 
 ## Start here
 
-- [Install and run your first program](/zigrupt/getting-started/).
-- [Understand broadcast and backpressure](/zigrupt/concepts/).
-- [Choose producer mode and runtime configuration](/zigrupt/reference/configuration/).
-- [Look up the public API](/zigrupt/reference/api/).
-- [See the measured performance comparison](/zigrupt/performance/).
+- [Install and run your first program](/getting-started/).
+- [Understand broadcast and backpressure](/concepts/).
+- [Choose producer mode and runtime configuration](/reference/configuration/).
+- [Look up the public API](/reference/api/).
+- [See the measured performance comparison](/performance/).
 - [Run the canonical examples](https://github.com/sarthakvk/zigrupt/tree/main/examples).
 
 The project uses the [MIT license](https://github.com/sarthakvk/zigrupt/blob/main/LICENSE).

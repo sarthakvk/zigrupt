@@ -62,14 +62,14 @@ npm --prefix .docs-site run check
 npm --prefix .docs-site run dev
 ```
 
-Open `http://localhost:4321/zigrupt/`. For a production preview, first run the
+Open `http://localhost:4321/`. For a production preview, first run the
 check/build command, then `npm --prefix .docs-site run preview` and open the same URL.
 Search is indexed in the production build; validate search using that preview.
 
 Author ordinary Markdown under `docs/`, using folders for the site hierarchy.
 New pages need a title and description in frontmatter. Add each new page to the
 ordered sidebar in `.docs-site/astro.config.mjs`.
-Use `/zigrupt/.../` links for site routes and relative paths for source assets.
+Use `/.../` links for site routes and relative paths for source assets.
 The production link check verifies pages, fragments, referenced local assets,
 CSS URLs, repository-document relative links, and the search index's presence.
 It does not check external-site uptime or exercise a browser.
@@ -98,18 +98,20 @@ ordering, backpressure, and shutdown where relevant.
 
 ## Publishing configuration
 
-GitHub Pages is the proposed host, with base path `/zigrupt/`. The
+Cloudflare Pages serves https://zigrupt.sarthakvk.com/ from the site root. The
 `.github/workflows/docs-pages.yml` builds, checks, and publishes the site on pushes
 to `main` and on release tags matching `vX.Y.Z`. It can also be run manually.
 Pull requests run validation without publishing. The site root shows the current
 `main` docs. Each release tag containing `docs/index.md` gets an
-archived site at `/zigrupt/<tag>/`; the version menu links to these archives.
+archived site at `/<tag>/`; the version menu links to these archives.
 The build uses the Markdown and images committed in each tag, so editing `main`
 does not rewrite released documentation.
 
-Select GitHub Actions as the Pages source in repository settings and review the
-`github-pages` environment once. The workflow does not enable Pages automatically.
-After a successful publication, add the confirmed public URL to the README. A custom domain or a
-change of repository owner/name requires reviewing `site`, `base`, content links,
-and the link check together. No new security or community policy is established
-by this documentation work.
+The Cloudflare Pages project is `zigrupt`, with `main` as its production branch.
+The GitHub Actions workflow uses repository variable `CLOUDFLARE_ACCOUNT_ID` and
+repository secret `CLOUDFLARE_API_TOKEN`. Create the token in Cloudflare with
+Account > Cloudflare Pages > Edit access to this account, then store it as a
+GitHub Actions secret. Keep the token out of commits and chat. The custom domain
+must be attached to the Pages project. Cloudflare DNS has a `zigrupt` CNAME
+pointing to `zigrupt.pages.dev`. A change of domain or repository owner/name
+requires reviewing the site URL, base path, content links, and link checker.
