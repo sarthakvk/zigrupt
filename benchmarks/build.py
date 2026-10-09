@@ -16,7 +16,7 @@ BIN = ROOT / ".bin"
 DEPS = ROOT / ".deps"
 SOURCES = json.loads((ROOT / "sources.json").read_text())
 ADAPTER_FILES = (
-    "native.zig",
+    "zig/native.zig",
     "platform.c",
     "rust/src/main.rs",
     "rust/build.rs",
@@ -104,7 +104,7 @@ def main(standalone: bool = False) -> None:
                 "-lc",
                 "--dep",
                 "library",
-                f"-Mroot={ROOT / 'native.zig'}",
+                f"-Mroot={ROOT / 'zig/native.zig'}",
                 "-O",
                 "ReleaseFast",
                 "-mcpu=native",

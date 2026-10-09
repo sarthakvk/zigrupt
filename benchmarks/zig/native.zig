@@ -19,7 +19,7 @@ const Args = struct {
     cpus: [6]c_int,
 };
 
-// Only ring allocations use this allocator; measurement storage is reported separately.
+// Ring and reusable event storage use this allocator; measurement storage is reported separately.
 const RingAllocator = struct {
     var calls: Atomic(usize) = .init(0);
     var bytes: usize = 0;
@@ -53,8 +53,8 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
         const BusySpin = struct {
             pub fn wait() void {}
         };
-        const handlers = [_]*const fn ([]const Event) usize{ handle0, handle1, handle2 };
-        const Bus = library.EventBus(Event, producers > 1, handlers[0..consumers], BusySpin, BusySpin);
+        const handlers = [_]*const fn ([]const *Event) usize{ handle0, handle1, handle2 };
+        const Bus = library.EventBus(*Event, producers > 1, handlers[0..consumers], BusySpin, BusySpin);
         const Consumer = struct {
             count: usize align(128) = 0,
             sum: u64 = 0,
@@ -69,6 +69,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
         };
         var args: Args = undefined;
         var bus: Bus = undefined;
+        var payloads: []Event = undefined;
         var states: [consumers]Consumer align(128) = undefined;
         var phase: Atomic(usize) = .init(0);
         var ready: Atomic(usize) = .init(0);
@@ -81,17 +82,17 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
         var event_base: u64 = 0;
         var cpu_start: u64 = 0;
 
-        fn handle0(events: []const Event) usize {
+        fn handle0(events: []const *Event) usize {
             return handleBatch(0, events);
         }
-        fn handle1(events: []const Event) usize {
+        fn handle1(events: []const *Event) usize {
             return handleBatch(1, events);
         }
-        fn handle2(events: []const Event) usize {
+        fn handle2(events: []const *Event) usize {
             return handleBatch(2, events);
         }
 
-        fn handleBatch(comptime cid: usize, events: []const Event) usize {
+        fn handleBatch(comptime cid: usize, events: []const *Event) usize {
             if (cid >= consumers) unreachable;
             // Observe batching only in correctness runs; measured work stays per-event.
             if (args.check) states[cid].max_observed_batch = @max(states[cid].max_observed_batch, events.len);
@@ -99,7 +100,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             return events.len;
         }
 
-        fn handle(comptime cid: usize, event: Event) void {
+        fn handle(comptime cid: usize, event: *const Event) void {
             if (cid >= consumers) unreachable;
             const s = &states[cid];
             if (s.count == 0) bench_pin(args.cpus[producers + cid]);
@@ -133,6 +134,8 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
         fn publish(pid: usize) void {
             bench_pin(args.cpus[pid]);
             _ = ready.fetchAdd(1, .release);
+            const slots_per_producer = args.capacity + 1;
+            var slot: usize = 0;
             for (1..3) |round| {
                 while (phase.load(.acquire) < round) std.atomic.spinLoopHint();
                 const first = if (round == 1) 0 else args.warm;
@@ -143,10 +146,11 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
                         const scheduled = start + (id - first) * 1_000_000_000 / args.rate;
                         while (bench_now() < scheduled) std.atomic.spinLoopHint();
                     }
-                    var event: Event = undefined;
+                    const event = &payloads[pid * slots_per_producer + slot];
                     inline for (0..words) |j| event[j] = id + j;
                     if (args.check and round == 2) _ = attempted.fetchAdd(1, .monotonic);
                     bus.produce(event) catch @panic("publish failed");
+                    slot = if (slot + 1 == slots_per_producer) 0 else slot + 1;
                     if (args.check and round == 2) _ = published.fetchAdd(1, .release);
                 }
                 _ = producer_done.fetchAdd(1, .release);
@@ -189,6 +193,10 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
                 allocator.free(s.histogram);
                 allocator.free(s.trace);
             };
+            // A producer can have at most capacity events awaiting consumers.
+            // The extra slot keeps the next payload distinct until produce unblocks.
+            payloads = try RingAllocator.value.alloc(Event, producers * (args.capacity + 1));
+            defer RingAllocator.value.free(payloads);
             // Java and Rust acknowledge available batches natively. Do not cap
             // Zigrupt at one event or wait for a full batch before consuming.
             bus = try Bus.init(RingAllocator.value, args.capacity, args.capacity);
