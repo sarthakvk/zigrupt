@@ -9,6 +9,7 @@ extern fn bench_pin(c_int) void;
 extern fn bench_sleep() void;
 extern "c" fn printf([*:0]const u8, ...) c_int;
 
+/// Command-line settings shared by the specialized benchmark harness.
 const Args = struct {
     capacity: usize,
     producer_count: usize,
@@ -19,22 +20,26 @@ const Args = struct {
     cpus: [6]c_int,
 };
 
-// Ring and reusable event storage use this allocator; measurement storage is reported separately.
+/// Tracks allocations for the ring and reusable event storage separately from metrics storage.
 const RingAllocator = struct {
     var calls: Atomic(usize) = .init(0);
     var bytes: usize = 0;
+    /// Allocates ring storage and records its requested size.
     fn alloc(_: *anyopaque, len: usize, alignment: std.mem.Alignment, ret: usize) ?[*]u8 {
         const result = allocator.rawAlloc(len, alignment, ret) orelse return null;
         _ = calls.fetchAdd(1, .monotonic);
         bytes += len;
         return result;
     }
+    /// Declines in-place resizing of tracked allocations.
     fn resize(_: *anyopaque, _: []u8, _: std.mem.Alignment, _: usize, _: usize) bool {
         return false;
     }
+    /// Declines remapping of tracked allocations.
     fn remap(_: *anyopaque, _: []u8, _: std.mem.Alignment, _: usize, _: usize) ?[*]u8 {
         return null;
     }
+    /// Releases a tracked allocation to the backing allocator.
     fn free(_: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ret: usize) void {
         allocator.rawFree(buf, alignment, ret);
     }
@@ -46,15 +51,19 @@ const RingAllocator = struct {
     } };
 };
 
+/// Builds a benchmark harness for one payload size and producer-consumer topology.
 fn Harness(comptime words: usize, comptime producers: usize, comptime consumers: usize) type {
     return struct {
         const Self = @This();
         const Event = [words]u64;
+        /// Avoids sleeping when the event bus requests a wait strategy.
         const BusySpin = struct {
+            /// Returns immediately so the bus can retry its operation.
             pub fn wait() void {}
         };
         const handlers = [_]*const fn ([]const *Event) usize{ handle0, handle1, handle2 };
         const Bus = library.EventBus(*Event, producers > 1, handlers[0..consumers], BusySpin, BusySpin);
+        /// Holds one consumer's validation state and measurements.
         const Consumer = struct {
             count: usize align(128) = 0,
             sum: u64 = 0,
@@ -82,16 +91,20 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
         var event_base: u64 = 0;
         var cpu_start: u64 = 0;
 
+        /// Passes a batch to consumer zero.
         fn handle0(events: []const *Event) usize {
             return handleBatch(0, events);
         }
+        /// Passes a batch to consumer one.
         fn handle1(events: []const *Event) usize {
             return handleBatch(1, events);
         }
+        /// Passes a batch to consumer two.
         fn handle2(events: []const *Event) usize {
             return handleBatch(2, events);
         }
 
+        /// Processes a bus batch and reports how many events were acknowledged.
         fn handleBatch(comptime cid: usize, events: []const *Event) usize {
             if (cid >= consumers) unreachable;
             // Observe batching only in correctness runs; measured work stays per-event.
@@ -100,6 +113,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             return events.len;
         }
 
+        /// Validates and measures one delivered event for a consumer.
         fn handle(comptime cid: usize, event: *const Event) void {
             if (cid >= consumers) unreachable;
             const s = &states[cid];
@@ -131,6 +145,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             }
         }
 
+        /// Publishes warmup and measured events for one pinned producer.
         fn publish(pid: usize) void {
             bench_pin(args.cpus[pid]);
             _ = ready.fetchAdd(1, .release);
@@ -159,6 +174,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             while (phase.load(.acquire) != 3) bench_sleep();
         }
 
+        /// Waits until producers and consumers complete the current phase.
         fn waitDone(target: usize, produced: usize) void {
             while (producer_done.load(.acquire) < produced) bench_sleep();
             for (&states) |*s| while (s.done.load(.acquire) < target) {
@@ -166,6 +182,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             };
         }
 
+        /// Estimates a latency percentile from logarithmically scaled buckets.
         fn percentile(hist: []u64, n: usize, per_mille: usize) u64 {
             const rank = (n * per_mille + 999) / 1000;
             var total: u64 = 0;
@@ -179,6 +196,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             @panic("missing latency samples");
         }
 
+        /// Runs warmup, measurement, validation, and JSON reporting.
         fn run(a: Args) !void {
             args = a;
             for (&states) |*s| {
@@ -216,6 +234,8 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
             phase.store(2, .release);
             var blocked: usize = 0;
             if (args.check) {
+                // Stall the last consumer, then verify the ring stops accepting
+                // publications while a producer is still trying to publish.
                 while (!slow_entered.load(.acquire)) bench_sleep();
                 for (0..50) |_| bench_sleep();
                 blocked = published.load(.acquire);
@@ -257,6 +277,7 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
     };
 }
 
+/// Selects the compile-time harness specialization for a requested topology.
 fn dispatch(comptime words: usize, p: usize, c: usize, args: Args) !void {
     if (p == 1 and c == 1) return Harness(words, 1, 1).run(args);
     if (p == 4 and c == 1) return Harness(words, 4, 1).run(args);
@@ -265,6 +286,7 @@ fn dispatch(comptime words: usize, p: usize, c: usize, args: Args) !void {
     return error.UnsupportedTopology;
 }
 
+/// Parses the native benchmark arguments and runs the selected harness.
 pub export fn bench_main(argc: c_int, argv: [*][*:0]const u8) c_int {
     if (argc < 11) return 2;
     var nums: [8]u64 = undefined;
