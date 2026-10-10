@@ -22,6 +22,7 @@ from build import BIN, ROOT, adapter_hashes, tree_hash
 
 IMPLEMENTATIONS = ("zigrupt", "java", "rust")
 TOPOLOGIES = ((1, 1), (2, 1), (2, 2), (4, 1), (1, 3), (3, 3))
+CASES = {f"{p}p{c}c": (p, c) for p, c in TOPOLOGIES}
 LATENCY_FRACTIONS = (0.5, 0.6, 0.7, 0.8, 0.9, 0.95)
 JVM_FLAGS = [
     "-Xms256m",
@@ -83,11 +84,11 @@ class Workload:
         return f"{self.producers}p{self.consumers}c-{self.capacity}-{self.payload}b"
 
 
-def workloads() -> list[Workload]:
+def workloads(cases: list[str]) -> list[Workload]:
     return [
         Workload(p, c, capacity, payload)
         for (p, c), capacity, payload in itertools.product(
-            TOPOLOGIES, (2048, 32768), (8, 64)
+            (CASES[case] for case in dict.fromkeys(cases)), (2048, 32768), (8, 64)
         )
     ]
 
@@ -374,6 +375,13 @@ def main() -> None:
         help="directory for the CSV files; must not already exist",
     )
     parser.add_argument(
+        "--case",
+        nargs="+",
+        choices=list(CASES),
+        default=list(CASES),
+        help="producer/consumer cases to run",
+    )
+    parser.add_argument(
         "--repeats",
         type=int,
         default=5,
@@ -439,7 +447,7 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=False)
     runner = Runner(output, cpus, args)
     rng = random.Random(args.seed)
-    jobs = [(w, impl) for w in workloads() for impl in selected_implementations]
+    jobs = [(w, impl) for w in workloads(args.case) for impl in selected_implementations]
     rng.shuffle(jobs)
     checks: dict[tuple[str, str], bool] = {}
     print(f"Checking {len(jobs)} workloads...", flush=True)
@@ -511,7 +519,7 @@ def main() -> None:
             )
             runner.sample(impl, w, "throughput", repeat, warm, n)
     rates: dict[str, dict[str, Any]] = {}
-    for w in workloads():
+    for w in workloads(args.case):
         per_impl: dict[str, float] = {}
         for impl in selected_implementations:
             runs = [
