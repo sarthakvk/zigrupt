@@ -1,8 +1,4 @@
-//! Fixed-capacity event broadcasting with per-handler progress and producer backpressure.
-//!
-//! Sequence numbers start at one; per-slot release/acquire publication makes event writes visible.
-//!
-//! Lifecycle operations belong to the initializing thread; producers must finish before stopping.
+//! Ring-buffer event bus that broadcasts events to each handler on its own consumer thread.
 
 const std = @import("std");
 const atomic = std.atomic;
