@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Read `current_task.md` if it exists for ongoing planning and cross-session context; it is a local scratch-pad and must not be committed.
+
 ## Toolchain and verification
 
 - Use Zig **0.16.0**; `devbox shell` supplies it, but verify `zig version`. `devbox run test` is a failing placeholder; run Zig commands directly. Node is only needed for the documentation site.
