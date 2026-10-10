@@ -24,7 +24,8 @@ socket; cases exceeding the available cores are skipped. `2p1c` needs three
 cores, `2p2c` needs four, and running every case needs six. Use `--check-only`
 for correctness checks, or `--smoke` for a short functional run.
 The default is five independent repeats with a 3-second warmup and 2-second
-measurement target. Pass `--output results/name` to choose a directory within
+measurement target. An approximate runtime is shown before the run starts.
+Pass `--output results/name` to choose a directory within
 `benchmarks/`; an existing output directory is rejected. Results are local
 measurements, not a universal ranking.
 

@@ -7,6 +7,7 @@ import csv
 import hashlib
 import itertools
 import json
+import math
 import os
 import random
 import statistics
@@ -91,6 +92,38 @@ def workloads(cases: list[str]) -> list[Workload]:
             (CASES[case] for case in dict.fromkeys(cases)), (2048, 32768), (8, 64)
         )
     ]
+
+
+def estimated_runtime(
+    args: argparse.Namespace, jobs: list[tuple[Workload, str]], core_count: int
+) -> float:
+    # Checks and calibration are event-count based, so allow a rough second each.
+    seconds = len(jobs) * (1 + args.cooldown)
+    if args.check_only:
+        return seconds
+    eligible_count = sum(
+        w.producers + w.consumers <= core_count for w, _ in jobs
+    )
+    warm_seconds = 0.03 if args.smoke else args.warm_seconds
+    measure_seconds = 0.03 if args.smoke else args.seconds
+    seconds += eligible_count * (1 + args.cooldown)
+    seconds += (
+        eligible_count
+        * args.repeats
+        * (1 + len(LATENCY_FRACTIONS))
+        * (warm_seconds + measure_seconds + args.cooldown)
+    )
+    return seconds
+
+
+def format_duration(seconds: float) -> str:
+    minutes, seconds = divmod(math.ceil(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
 
 
 def cpu_topology() -> list[dict[str, Any]]:
@@ -436,6 +469,10 @@ def main() -> None:
     output = (ROOT / args.output).resolve()
     if output.exists():
         parser.error(f"output directory already exists: {output}")
+    cpus = physical_cpus(cpu_topology())
+    jobs = [(w, impl) for w in workloads(args.case) for impl in selected_implementations]
+    estimate = estimated_runtime(args, jobs, len(cpus))
+    print(f"Approximate benchmark runtime: {format_duration(estimate)}", flush=True)
     issue = build_issue(args.standalone)
     if issue:
         print(f"Building benchmarks ({issue})...", flush=True)
@@ -443,11 +480,9 @@ def main() -> None:
         issue = build_issue(args.standalone)
         if issue:
             raise RuntimeError(f"Benchmark build is still invalid: {issue}")
-    cpus = physical_cpus(cpu_topology())
     output.mkdir(parents=True, exist_ok=False)
     runner = Runner(output, cpus, args)
     rng = random.Random(args.seed)
-    jobs = [(w, impl) for w in workloads(args.case) for impl in selected_implementations]
     rng.shuffle(jobs)
     checks: dict[tuple[str, str], bool] = {}
     print(f"Checking {len(jobs)} workloads...", flush=True)
