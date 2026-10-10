@@ -106,7 +106,8 @@ const MultiProducerSequencer = struct {
     }
 
     pub fn isSlotSafeToWrite(self: *Self, seq: usize, consumer_seq: []PaddedAtomicSeq) bool {
-        if (seq <= self.safe_to_write_through.value.load(.acquire)) return true;
+        var cur = self.safe_to_write_through.value.load(.acquire);
+        if (seq <= cur) return true;
 
         var slowest_consumer_seq: usize = std.math.maxInt(usize);
 
@@ -114,27 +115,29 @@ const MultiProducerSequencer = struct {
             slowest_consumer_seq = @min(slowest_consumer_seq, cseq.value.load(.acquire));
         }
 
-        var new = slowest_consumer_seq +| (self.buffer_size - 1);
-        var cur = self.safe_to_write_through.value.load(.acquire);
+        const candidate = slowest_consumer_seq +| (self.buffer_size - 1);
 
-        if (cur > new) return seq <= new;
+        if (cur >= candidate) return seq <= candidate;
 
         // Do a compare and swap
         // If the value changed concurrently, then keep the max one
-        while (self.safe_to_write_through.value.cmpxchgWeak(cur, new, .acq_rel, .acquire)) |updated| {
-            if (new > updated)
-                // new is the max, try CAS again
-                // with updated as current
-                cur = updated
-            else {
-                // concurrent update is max
-                // set new to the updated and break
-                new = updated;
-                break;
+        while (cur < candidate) {
+            if (self.safe_to_write_through.value.cmpxchgWeak(cur, candidate, .acq_rel, .acquire)) |updated| {
+                // CAS failed
+                // try again after updated cur to the latest value.
+                cur = updated;
+            } else {
+                // CAS succeeded
+                // candidate is the greatest safe_to_write_through
+                // so we compare with candidate.
+                return seq <= candidate;
             }
         }
 
-        return seq <= new;
+        // If we reach here, that means
+        // another producer updated the safe_to_write_through to cur
+        // and it is greater than what we calculated, so we compare with cur.
+        return seq <= cur;
     }
 };
 
