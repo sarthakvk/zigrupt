@@ -1,3 +1,4 @@
 # Optional visualization dependencies; not needed to build or run benchmarks.
 jupyterlab>=4.4,<5
 matplotlib>=3.9,<4
+pandas>=2.2,<4
