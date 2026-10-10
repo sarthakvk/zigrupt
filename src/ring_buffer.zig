@@ -1,6 +1,8 @@
-//
-// ring_buffer.zig
-//
+//! Fixed-capacity event broadcasting with per-handler progress and producer backpressure.
+//!
+//! Sequence numbers start at one; per-slot release/acquire publication makes event writes visible.
+//!
+//! Lifecycle operations belong to the initializing thread; producers must finish before stopping.
 
 const std = @import("std");
 const atomic = std.atomic;
@@ -8,18 +10,23 @@ const waiting_strategy = @import("waiting_strategy.zig");
 
 const mem = std.mem;
 
+/// Cache-line-aligned sequence counter that avoids false sharing between adjacent counters.
 const PaddedAtomicSeq = struct {
     value: std.atomic.Value(usize) align(std.atomic.cache_line),
 };
 
-/// EventHandler
-/// Event handlers is a function that accepts a slice of events to process
-/// and returns the number of events consumed.
-/// The returned values must be <= input slice length
+/// Callback that returns the number of events consumed from the start of a batch.
+///
+/// Return at most the slice length; zero retries the same events without advancing progress.
+///
+/// The slice is borrowed for the call only.
+///
+/// Each handler runs on its own consumer thread.
 pub fn EventHandler(comptime T: type) type {
     return *const fn ([]const T) usize;
 }
 
+/// Configuration and lifecycle errors returned by event bus operations.
 pub const EventBusError = error{
     InvalidConfig,
     InvalidConsumerID,
@@ -32,13 +39,19 @@ pub const EventBusError = error{
     NotLifecycleOwner,
 };
 
+/// Lifecycle phases controlling whether events may be published or consumed.
 pub const EventBusState = enum(u8) {
+    /// No consumer threads are active; the bus may be started.
     idle,
+    /// Consumer threads are being spawned and wait for startup to finish.
     starting,
+    /// Publishers may submit events and consumers process them.
     running,
+    /// New publications are rejected while consumers finish queued events.
     draining,
 };
 
+/// Assigns sequences for one producer, caching capacity until consumers must be checked again.
 const SingleProducerSequencer = struct {
     next: PaddedAtomicSeq,
     safe_to_write_through: usize align(std.atomic.cache_line),
@@ -46,6 +59,7 @@ const SingleProducerSequencer = struct {
 
     const Self = @This();
 
+    /// Starts claims at sequence one with `buffer_size` initially writable slots.
     pub fn init(buffer_size: usize) Self {
         return .{
             .next = .{ .value = .init(1) },
@@ -54,16 +68,23 @@ const SingleProducerSequencer = struct {
         };
     }
 
+    /// Reserves the next sequence without publishing it.
+    ///
+    /// Only the sole producer may call this.
     pub fn claim(self: *Self) usize {
         const seq = self.next.value.load(.monotonic);
         self.next.value.store(seq + 1, .release);
         return seq;
     }
 
+    /// Returns the next unclaimed sequence, not necessarily the end of published events.
     pub fn current(self: *Self) usize {
         return self.next.value.load(.acquire);
     }
 
+    /// Checks whether reusing `seq`'s slot preserves every consumer's unread events.
+    ///
+    /// Consumer counters name their next unread sequence; no consumers means no backpressure.
     pub fn isSlotSafeToWrite(self: *Self, seq: usize, consumer_seq: []PaddedAtomicSeq) bool {
         if (seq <= self.safe_to_write_through) return true;
 
@@ -78,6 +99,7 @@ const SingleProducerSequencer = struct {
     }
 };
 
+/// Atomically assigns unique sequences and shares a cached capacity limit between producers.
 const MultiProducerSequencer = struct {
     next: PaddedAtomicSeq,
     safe_to_write_through: PaddedAtomicSeq,
@@ -85,6 +107,7 @@ const MultiProducerSequencer = struct {
 
     const Self = @This();
 
+    /// Starts claims at sequence one with `buffer_size` initially writable slots.
     pub fn init(buffer_size: usize) Self {
         return .{
             .next = PaddedAtomicSeq{ .value = .init(1) },
@@ -93,14 +116,19 @@ const MultiProducerSequencer = struct {
         };
     }
 
+    /// Atomically reserves a unique sequence without waiting for capacity or publishing it.
     pub fn claim(self: *Self) usize {
         return self.next.value.fetchAdd(1, .monotonic);
     }
 
+    /// Returns the next unclaimed sequence; earlier claims may still be unpublished.
     pub fn current(self: *Self) usize {
         return self.next.value.load(.acquire);
     }
 
+    /// Checks slot reuse against the slowest consumer and atomically advances the cached limit.
+    ///
+    /// Consumer counters name their next unread sequence; no consumers means no backpressure.
     pub fn isSlotSafeToWrite(self: *Self, seq: usize, consumer_seq: []PaddedAtomicSeq) bool {
         var cur = self.safe_to_write_through.value.load(.acquire);
         if (seq <= cur) return true;
@@ -115,28 +143,26 @@ const MultiProducerSequencer = struct {
 
         if (cur >= candidate) return seq <= candidate;
 
-        // Do a compare and swap
-        // If the value changed concurrently, then keep the max one
+        // Never move the shared limit backward if another producer observed newer progress.
         while (cur < candidate) {
             if (self.safe_to_write_through.value.cmpxchgWeak(cur, candidate, .acq_rel, .acquire)) |updated| {
-                // CAS failed
-                // try again after updated cur to the latest value.
                 cur = updated;
             } else {
-                // CAS succeeded
-                // candidate is the greatest safe_to_write_through
-                // so we compare with candidate.
                 return seq <= candidate;
             }
         }
 
-        // If we reach here, that means
-        // another producer updated the safe_to_write_through to cur
-        // and it is greater than what we calculated, so we compare with cur.
         return seq <= cur;
     }
 };
 
+/// Creates a bus type that broadcasts each `T` event to every handler in claim order.
+///
+/// Set `multi_producer` for concurrent publishers; otherwise only one producer may publish.
+///
+/// Handlers and strategy types are fixed for the bus type; strategies expose `wait() void`.
+///
+/// Keep the initialized bus at a stable address while running, and do not let sequences overflow.
 pub fn RingBufferEventBus(
     comptime T: type,
     multi_producer: bool,
@@ -163,11 +189,14 @@ pub fn RingBufferEventBus(
         allocator: mem.Allocator,
 
         const Self = @This();
-        /// Initialize the RingBuffer
-        /// Args:
-        ///     - allocator: Allocator interface
-        ///     - buffer_size: size of ring buffer, must be a power of 2
-        ///     - max_batch_size: Maximum length of events slice sent to event_handler
+        /// Allocates an idle bus and records the calling thread as its lifecycle owner.
+        ///
+        /// `buffer_size` must be a nonzero power of two (`IncorrectBufferSize` otherwise).
+        ///
+        /// `max_batch_size` caps callback slices and must be between one and `buffer_size`
+        /// inclusive (`IncorrectBatchSize` otherwise).
+        ///
+        /// Allocation failures are propagated.
         pub fn init(allocator: std.mem.Allocator, buffer_size: usize, max_batch_size: usize) !Self {
             // buffer_size must be a power of 2
             if (buffer_size == 0 or buffer_size & (buffer_size - 1) != 0) return EventBusError.IncorrectBufferSize;
@@ -203,6 +232,11 @@ pub fn RingBufferEventBus(
             };
         }
 
+        /// Frees bus storage.
+        ///
+        /// The bus must be idle with no producer calls in flight.
+        ///
+        /// Does not join threads or release resources referenced by event values.
         pub fn deinit(self: *Self) void {
             self.allocator.free(self.buffer);
             self.allocator.free(self.buffer_seq);
@@ -210,6 +244,12 @@ pub fn RingBufferEventBus(
             self.allocator.free(self.threads);
         }
 
+        /// Starts one thread per handler, preserving sequence progress across restarts.
+        ///
+        /// Requires the initializing thread (`NotLifecycleOwner`) and an idle bus
+        /// (`BusStarting`, `BusRunning`, or `BusDraining` otherwise).
+        ///
+        /// Thread-spawn errors are propagated after joining any threads already started.
         pub fn start(self: *Self) !void {
             try self.ensureLifecycleOwner();
 
@@ -226,10 +266,7 @@ pub fn RingBufferEventBus(
 
             self.state.store(.starting, .monotonic);
 
-            // this handles partial failures, the threads that were started
-            // will receive the signal to stop.
-            // when the stop will be called here, the state can only be
-            // idle/running
+            // On partial startup failure, drain and join the threads already spawned.
             errdefer self.stop() catch unreachable;
 
             for (0..event_handlers.len) |eid| {
@@ -244,14 +281,15 @@ pub fn RingBufferEventBus(
             self.state.store(.running, .release);
         }
 
-        // Stop the Bus
-        // This method will put the bus into `draining` state and wait for the
-        // even handlers to finish consuming published events.
-        //
-        // It takes no gurantee for in-flight events, they might be dropped It is callers
-        // responsiblity to make sure the production has stopped before calling stop.
-        //
-        // Once the stop returns the bus will be in `idle` state and can be started again.
+        /// Drains queued events, joins handler threads, and returns the bus to idle.
+        ///
+        /// Callers must stop production and finish all in-flight `produce()` calls before calling this.
+        /// Otherwise events may be dropped: draining stops at the first unpublished claim.
+        ///
+        /// Handlers must make progress for this call to finish.
+        ///
+        /// Requires the initializing thread (`NotLifecycleOwner`); returns `BusIdle`
+        /// or `BusDraining` when already in that state.
         pub fn stop(self: *Self) !void {
             try self.ensureLifecycleOwner();
 
@@ -275,6 +313,11 @@ pub fn RingBufferEventBus(
             self.state.store(.idle, .release);
         }
 
+        /// Runs one handler over contiguous published batches without crossing the ring boundary.
+        ///
+        /// `handler_id` selects its callback and progress counter; only this thread advances it.
+        ///
+        /// Acquire publication loads expose event data; release progress stores permit slot reuse.
         fn handleEvent(self: *Self, handler_id: usize) void {
             const handler = event_handlers[handler_id];
             var c_seq = self.consumer_seq[handler_id].value.load(.monotonic);
@@ -310,9 +353,7 @@ pub fn RingBufferEventBus(
             // until all the handler threads join.
             std.debug.assert(state == .draining);
 
-            // Cursor will always be the next available sequence
-            // once the event handlers reach cursor, they've consumed
-            // all the in-flight/queued events
+            // Snapshot claims for draining; an unpublished gap ends the drain below.
             const cursor = self.sequencer.current();
 
             while (c_seq < cursor) {
@@ -337,6 +378,13 @@ pub fn RingBufferEventBus(
             }
         }
 
+        /// Copies an event into the ring, waiting for all consumers before reusing its slot.
+        ///
+        /// Pointers and slices within `event` remain caller-owned and must outlive consumption.
+        ///
+        /// Returns `BusIdle`, `BusStarting`, or `BusDraining` if not running at entry.
+        ///
+        /// Once claimed, a publication waits for capacity without rechecking lifecycle state.
         pub fn produce(self: *Self, event: T) !void {
             const state = self.state.load(.monotonic);
 
@@ -356,16 +404,18 @@ pub fn RingBufferEventBus(
                 PublisherWaitingStrategy.wait();
             }
 
-            // Finally store release the event
+            // Publish only after the event write so acquiring consumers see initialized data.
             const seq_idx = seq & self.mask;
             self.buffer[seq_idx] = event;
             self.buffer_seq[seq_idx].store(seq, .release);
         }
 
+        /// Returns `NotLifecycleOwner` when called outside the initializing thread.
         fn ensureLifecycleOwner(self: *Self) !void {
             if (!self.isLifecycleOwner()) return EventBusError.NotLifecycleOwner;
         }
 
+        /// Checks whether the caller is the thread that initialized this bus.
         fn isLifecycleOwner(self: *Self) bool {
             return self.lifecycle_owner == std.Thread.getCurrentId();
         }

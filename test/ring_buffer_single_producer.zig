@@ -1,3 +1,5 @@
+//! Single-producer broadcast, wraparound, backpressure, draining, and restart tests.
+
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
@@ -60,6 +62,7 @@ const Bus = RingBufferEventBus(
     waiting_strategy.BusySpin,
 );
 
+/// Publishes `len` consecutive values from `start`, waiting for slot reuse outside the bus.
 fn publish(bus: *Bus, start: usize, len: usize) void {
     for (start..start + len) |value| {
         // Keep the order/wrap test from exercising backpressure: wait for every
@@ -90,6 +93,7 @@ test "concurrent producer and two handlers preserve order across wraps" {
     try Second.expectRange(0, event_count);
 }
 
+/// Fills the ring, signals `attempting` before one extra publication, then increments `completed`.
 fn publishPastFullBuffer(
     bus: *Bus,
     attempting: *Gate,

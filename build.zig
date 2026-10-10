@@ -1,5 +1,10 @@
+//! Build configuration for the library module, usage examples, and tests.
+
 const std = @import("std");
 
+/// Registers the library, example, and test steps for the selected target and optimization mode.
+///
+/// The test step runs module tests and each top-level `test/*.zig` file as a separate executable.
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});

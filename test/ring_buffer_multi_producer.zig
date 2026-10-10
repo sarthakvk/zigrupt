@@ -1,3 +1,5 @@
+//! Concurrent-producer ordering, backpressure, publication gaps, draining, and restart tests.
+
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
@@ -23,6 +25,7 @@ const Bus = RingBufferEventBus(
     waiting_strategy.BusySpin,
 );
 
+/// Producer thread group with a shared start gate and thread-safe completion tracking.
 const Producers = struct {
     threads: [producer_count]std.Thread = undefined,
     thread_count: usize = 0,
@@ -31,6 +34,9 @@ const Producers = struct {
     cancelled: bool = false, // Written before opening the gate, read after waiting.
     completed: Counter = .{},
 
+    /// Spawns producers for `len` offsets from `start_offset`, releasing them once all are ready.
+    ///
+    /// On spawn failure, cancels and joins any started threads before propagating the error.
     fn start(self: *Producers, bus: *Bus, start_offset: usize, len: usize) !void {
         errdefer {
             // A partial spawn failure must release waiting producers without publishing.
@@ -47,6 +53,7 @@ const Producers = struct {
         self.gate.open();
     }
 
+    /// Waits for the start gate, then publishes values encoding the producer ID and offset.
     fn publish(self: *Producers, bus: *Bus, producer_id: usize, start_offset: usize, len: usize) void {
         self.ready.increment();
         self.gate.wait();
@@ -59,12 +66,14 @@ const Producers = struct {
         self.completed.increment();
     }
 
+    /// Joins all started producer threads; repeated calls are safe.
     fn join(self: *Producers) void {
         for (self.threads[0..self.thread_count]) |thread| thread.join();
         self.thread_count = 0;
     }
 };
 
+/// Asserts each producer's offsets arrive once in order, with identical interleaving for both handlers.
 fn expectProduced(start: usize, len: usize) !void {
     inline for (.{ First, Second }) |recorder| {
         try std.testing.expectEqual(producer_count * len, recorder.count);
@@ -167,13 +176,13 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
     try expectProduced(0, initial_per_producer + 1);
 }
 
-// Hold one producer inside its wait after it has claimed a sequence. Another
-// producer can then publish a later sequence first, leaving a publication gap.
+/// Waiting strategy that holds one claimed sequence while another producer publishes past it.
 const PausedPublisher = struct {
     threadlocal var paused: bool = false;
     var entered: Gate = .{};
     var released: Gate = .{};
 
+    /// Signals and blocks pause-enabled publishers until released, then yields the thread.
     pub fn wait() void {
         if (paused) {
             entered.open();
@@ -182,6 +191,7 @@ const PausedPublisher = struct {
         std.Thread.yield() catch {};
     }
 
+    /// Publishes one value with optional pausing on this thread's capacity waits.
     fn publish(bus: *GapBus, value: usize, pause: bool) void {
         paused = pause;
         bus.produce(value) catch unreachable;

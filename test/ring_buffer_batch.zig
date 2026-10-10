@@ -1,3 +1,5 @@
+//! Batch sizing, wrap boundaries, partial consumption, and publication-gap tests in both bus phases.
+
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
@@ -8,6 +10,9 @@ const releaseWhenDraining = @import("support/utils.zig").releaseWhenDraining;
 
 const capacity = 8;
 
+/// Creates an isolated recorder for `id` with configurable partial consumption and one-time pausing.
+///
+/// Configure before starting handlers and inspect recorded batches only after joining them.
 fn BatchRecorder(comptime id: usize) type {
     return struct {
         var unique_id = id;
@@ -22,6 +27,9 @@ fn BatchRecorder(comptime id: usize) type {
         var values: [32]usize = undefined;
         var count: usize = 0;
 
+        /// Clears recording state and installs first-call synchronization.
+        ///
+        /// No handler may be active.
         fn reset(release: *Gate, ready: *Counter) void {
             gate = release;
             entered = ready;
@@ -32,6 +40,7 @@ fn BatchRecorder(comptime id: usize) type {
             count = 0;
         }
 
+        /// Pauses and returns zero on its first call, then records batches and their consumed prefixes.
         fn handle(events: []const usize) usize {
             if (!paused) {
                 paused = true;
@@ -54,11 +63,13 @@ fn BatchRecorder(comptime id: usize) type {
             return consumed;
         }
 
+        /// Asserts callback batch lengths after the initial paused call match `expected` exactly.
         fn expectBatches(expected: []const usize) !void {
             try std.testing.expectEqual(expected.len, calls);
             try std.testing.expectEqualSlices(usize, expected, lengths[0..calls]);
         }
 
+        /// Asserts exactly `len` consumed values in consecutive order beginning at `start`.
         fn expectRange(start: usize, len: usize) !void {
             try std.testing.expectEqual(len, count);
             for (values[0..count], start..) |value, expected| {
@@ -72,10 +83,14 @@ const First = BatchRecorder(0);
 const Second = BatchRecorder(1);
 const handlers = [_]EventHandler(usize){ First.handle, Second.handle };
 
+/// Creates a bus type for the chosen producer mode with both batch recorders attached.
 fn Bus(comptime multi_producer: bool) type {
     return RingBufferEventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
 }
 
+/// Releases handlers during draining, or waits for `next_sequence` while running, then stops the bus.
+///
+/// Propagates release-thread spawn and bus-stop errors.
 fn finish(bus: anytype, gate: *Gate, draining: bool, next_sequence: usize) !void {
     if (draining) {
         const releaser = try std.Thread.spawn(.{}, releaseWhenDraining, .{ bus, gate });
@@ -105,6 +120,7 @@ test "batch size must be nonzero and no larger than capacity" {
 }
 
 test "running and draining batches respect size, wrap and the end of the queue" {
+    // Batch limit, publication count, and expected callback lengths for one scenario.
     const Case = struct { max_batch: usize, events: usize, lengths: []const usize };
     const cases = [_]Case{
         .{ .max_batch = 1, .events = 8, .lengths = &.{ 1, 1, 1, 1, 1, 1, 1, 1 } },
