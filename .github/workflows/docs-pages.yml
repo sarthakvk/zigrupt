@@ -3,6 +3,17 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Tag pushes ignore path filters so new release archives are still published.
+    # Keep these inputs aligned with ci.yml's docs change filter.
+    paths:
+      - 'docs/**'
+      - '.docs-site/**'
+      - 'examples/**'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'benchmarks/README.md'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/docs-pages.yml'
   workflow_dispatch:
 
 permissions:

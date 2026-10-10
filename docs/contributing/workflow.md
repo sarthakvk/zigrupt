@@ -96,15 +96,19 @@ performance reports, include the measurement setup and caveats above.
 
 For pull requests, explain the concrete problem and resulting behavior, describe
 validation, and identify any public-contract changes. Keep unrelated redesigns
-separate. CI runs the existing tests, formatting, examples, standalone consumer,
-and documentation checks. Concurrency changes should have focused evidence for
-ordering, backpressure, and shutdown where relevant.
+separate. CI runs the existing tests, formatting, examples, and standalone consumer
+on every push and pull request. Documentation checks run only when docs, site
+tooling, examples, included or checked Markdown, or the docs-related workflows
+change. Concurrency changes should have focused evidence for ordering,
+backpressure, and shutdown where relevant.
 
 ## Publishing configuration
 
 Cloudflare Pages serves https://zigrupt.sarthakvk.com/ from the site root. The
 `.github/workflows/docs-pages.yml` builds, checks, and publishes the site on pushes
-to `main` and on release tags matching `vX.Y.Z`. It can also be run manually.
+to `main` that change documentation inputs (the same paths used by CI's docs
+filter). Release tags matching `vX.Y.Z` and manual runs always publish, even when
+no documentation inputs changed, so new release archives are included.
 Pull requests run validation without publishing. The site root shows the current
 `main` docs. Each release tag containing `docs/index.md` gets an
 archived site at `/<tag>/`; the version menu links to these archives.
