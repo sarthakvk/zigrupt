@@ -24,7 +24,7 @@ export default defineConfig({
           href: "https://github.com/sarthakvk/zigrupt",
         },
       ],
-      components: { SiteTitle: "./src/components/SiteTitle.astro" },
+      components: { Header: "./src/components/Header.astro" },
       customCss: ["./src/styles/theme.css"],
       expressiveCode: {
         themes: [githubDarkColorblind, githubLightColorblind],

@@ -1,0 +1,15 @@
+---
+import DefaultHeader from '@astrojs/starlight/components/Header.astro';
+import VersionSelect from './VersionSelect.astro';
+---
+
+<div class="site-header">
+  <DefaultHeader />
+  <VersionSelect />
+</div>
+
+<style>
+  .site-header { display: flex; align-items: center; gap: var(--sl-nav-gap); height: 100%; }
+  /* Keep the version menu outside Starlight's clipped title wrapper. */
+  .site-header > :global(.header) { flex: 1; min-width: 0; }
+</style>
