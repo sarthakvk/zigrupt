@@ -94,11 +94,7 @@ const MultiProducerSequencer = struct {
     }
 
     pub fn claim(self: *Self) usize {
-        var seq = self.next.value.load(.monotonic);
-        while (self.next.value.cmpxchgWeak(seq, seq + 1, .monotonic, .monotonic)) |new_seq| {
-            seq = new_seq;
-        }
-        return seq;
+        return self.next.value.fetchAdd(1, .monotonic);
     }
 
     pub fn current(self: *Self) usize {
