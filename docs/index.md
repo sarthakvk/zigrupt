@@ -1,5 +1,5 @@
 ---
-title: Zigrupt
+title: Home
 description: A high-performance event broadcasting library for Zig.
 ---
 

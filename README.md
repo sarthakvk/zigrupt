@@ -1,5 +1,3 @@
-# zigrupt
-
 <p align="center">
   <img src="docs/assets/zigrupt_logo.png" alt="Zigrupt logo" width="480">
 </p>
@@ -40,6 +38,7 @@ installation from a checkout before public availability.
 This is the executable [basic example](examples/basic.zig):
 
 <!-- snippet: examples/basic.zig -->
+
 ```zig
 const std = @import("std");
 const zigrupt = @import("zigrupt");
@@ -67,6 +66,7 @@ pub fn main() !void {
     std.debug.print("basic: sum = {d}\n", .{total});
 }
 ```
+
 <!-- end:examples/basic.zig -->
 
 From a checkout, run `zig build example-basic`; expected output is
