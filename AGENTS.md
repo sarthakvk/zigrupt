@@ -1,25 +1,37 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Toolchain and verification
 
-Zigrupt is a Zig implementation of the LMAX Disruptor pattern. The public module starts at `src/root.zig`; `src/ring_buffer.zig` implements the event bus and sequencers, and `src/waiting_strategy.zig` defines waiting strategies. Tests live in `test/*.zig`, with shared helpers in `test/support/`. The cross-language performance suite is under `benchmarks/`; see `benchmarks/README.md` before changing or running it.
+- Use Zig **0.16.0**; `devbox shell` supplies it, but verify `zig version`. `devbox run test` is a failing placeholder; run Zig commands directly. Node is only needed for the documentation site.
+- Plain `zig build` has no compilation/test work attached to its default step. CI's library checks, from the repository root, are:
 
-## Build, Test, and Development Commands
+  ```sh
+  zig fmt --check build.zig build.zig.zon src test examples
+  zig build test --summary all
+  zig build check-examples --summary all
+  python3 scripts/check-install.py
+  ```
 
-- `zig build` checks the default build configuration; this library has no executable target.
-- `zig build test` runs the module test and every top-level `test/*.zig` file.
-- `zig fmt src test build.zig` formats Zig sources; use `zig fmt --check src test build.zig` to check formatting without editing.
-- `devbox shell` provides the pinned Zig 0.16.0 toolchain when Zig is not installed locally.
-- `devbox run bench --standalone --smoke` runs a short Zig-only benchmark check on Linux. Use `devbox run bench --help` for other benchmark options.
+- `zig build test` runs module tests and every top-level `test/*.zig` file as separate executables. There is no build-level test filter. Focus one file/test with:
 
-## Coding Style & Naming Conventions
+  ```sh
+  zig test --dep zigrupt -Mroot=test/ring_buffer_batch.zig -Mzigrupt=src/root.zig --test-filter "batch size"
+  ```
 
-Follow `zig fmt` (four-space indentation) and existing Zig conventions: `snake_case` for files and local variables, `camelCase` for functions, and `PascalCase` for types. Keep public declarations in `src/root.zig` intentional. Document concurrency assumptions near atomic operations, especially ordering, sequence bounds, and producer/consumer ownership.
+  Omit `--test-filter` to run the whole file. Run the full suite before submitting library changes.
+- `zig build examples` only compiles examples; `zig build check-examples` executes all six with result checks. `zig build example-basic` runs one; other names are listed by `zig build --help`.
+- `scripts/check-install.py` needs Python 3 and Zig. It tests an isolated, offline archive consumer using the `.paths` allowlist in `build.zig.zon`; keep that allowlist current when adding packaged files.
 
-## Testing Guidelines
+## Concurrency context
 
-Use Zig's built-in `test` blocks and `std.testing`; there is no separate test framework or documented coverage threshold. Add focused tests to the matching `test/<feature>.zig` file, using descriptive test names such as `test "batch size must be nonzero"`. Cover both single- and multi-producer modes where behavior should agree, and include wraparound, backpressure, and lifecycle cases for ring-buffer changes. Run `zig build test` before submitting.
+- `src/root.zig` is the public API. `src/ring_buffer.zig` owns publication, handler threads and lifecycle; `src/sequencer.zig` owns claims and slot reuse. Claim progress is **not** publication progress: multi-producer claims can complete out of order, so consumption/draining must check contiguous per-slot publication.
+- Consumer counters identify the **next unread** sequence, starting at one; slot reuse is gated by the slowest handler. Preserve/document acquire/release ordering and producer/consumer ownership when changing atomics.
+- Keep a running bus at a stable address. `start()`/`stop()` belong to the initializing thread; finish all producer calls before `stop()`, then `deinit()`. Handlers acknowledge a consumed prefix; zero retries and can block shutdown. Callback slices are borrowed, and pointers inside copied events remain caller-owned.
+- For ring-buffer changes, cover single/multi-producer agreement, wraparound, backpressure and lifecycle. Reuse `test/support/synchronization.zig` gates/counters for thread coordination without timing assumptions.
 
-## Commit & Pull Request Guidelines
+## Documentation and benchmarks
 
-Recent commits use short, descriptive subjects, often imperative (for example, `Fix drain batching to check contiguous published events`); there is no enforced prefix scheme. Keep commits scoped to one change. In pull requests, explain the behavior changed, list verification commands, link a relevant issue when one exists, and include benchmark setup and results for performance claims.
+- Author site pages in `docs/`; `.docs-site/` is the separate Astro/Starlight npm project (Node **24.18.0**, npm **11.16.0**). New pages need title/description frontmatter and an entry in `.docs-site/astro.config.mjs`'s ordered sidebar.
+- README/docs regions marked `snippet` or `include` are generated. Edit their source (canonical code is in `examples/`), run `node .docs-site/scripts/sync-snippets.mjs`, and commit the synchronized output; do not hand-edit generated regions. Public behavior changes also need the applicable guides and handwritten `docs/reference/api.md` updated.
+- Site checks: `npm --prefix .docs-site ci`, then `npm --prefix .docs-site run check` (stale snippets, production build, links/assets). Preview with `npm --prefix .docs-site run dev`; search requires the production build and `npm --prefix .docs-site run preview`. See `CONTRIBUTING.md` for publishing/version archives.
+- Read `benchmarks/README.md` before benchmark work. On Linux, `devbox run bench --standalone --smoke` is a functional Zig-only check, not performance evidence; `--standalone` skips competitor builds/fetches. Performance cases need one physical core per producer/consumer and skip cases exceeding available cores. Report hardware, toolchain, flags, CPU mapping and repeated results for performance claims.
