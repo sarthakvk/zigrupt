@@ -1,4 +1,4 @@
-//! Broadcast event bus with single- or multi-producer publishing and pluggable waiting strategies.
+//! Public API for the event bus and waiting strategies.
 
 const std = @import("std");
 const event_bus = @import("ring_buffer.zig");
