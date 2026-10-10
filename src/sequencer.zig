@@ -1,4 +1,4 @@
-//! Sequence claims and cached capacity checks for single- and multi-producer publishing.
+//! Sequencers that assign event sequences and check ring-buffer slot reuse.
 
 const std = @import("std");
 
