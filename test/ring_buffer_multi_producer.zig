@@ -35,6 +35,7 @@ const Producers = struct {
     completed: Counter = .{},
 
     /// Spawns producers for `len` offsets from `start_offset`, releasing them once all are ready.
+    ///
     /// On spawn failure, cancels and joins any started threads before propagating the error.
     fn start(self: *Producers, bus: *Bus, start_offset: usize, len: usize) !void {
         errdefer {

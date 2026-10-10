@@ -11,6 +11,7 @@ const releaseWhenDraining = @import("support/utils.zig").releaseWhenDraining;
 const capacity = 8;
 
 /// Creates an isolated recorder for `id` with configurable partial consumption and one-time pausing.
+///
 /// Configure before starting handlers and inspect recorded batches only after joining them.
 fn BatchRecorder(comptime id: usize) type {
     return struct {
@@ -26,7 +27,9 @@ fn BatchRecorder(comptime id: usize) type {
         var values: [32]usize = undefined;
         var count: usize = 0;
 
-        /// Clears recording state and installs first-call synchronization; no handler may be active.
+        /// Clears recording state and installs first-call synchronization.
+        ///
+        /// No handler may be active.
         fn reset(release: *Gate, ready: *Counter) void {
             gate = release;
             entered = ready;
@@ -86,6 +89,7 @@ fn Bus(comptime multi_producer: bool) type {
 }
 
 /// Releases handlers during draining, or waits for `next_sequence` while running, then stops the bus.
+///
 /// Propagates release-thread spawn and bus-stop errors.
 fn finish(bus: anytype, gate: *Gate, draining: bool, next_sequence: usize) !void {
     if (draining) {

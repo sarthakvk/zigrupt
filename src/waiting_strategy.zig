@@ -1,4 +1,5 @@
 //! Waiting strategies used when publishers lack capacity or consumers lack published events.
+//!
 //! Custom strategies must expose a zero-argument `wait() void` callable from multiple threads.
 
 const std = @import("std");

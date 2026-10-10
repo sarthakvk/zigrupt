@@ -58,7 +58,9 @@ test "start and stop require lifecycle owner" {
 
         // Worker for attempting lifecycle operations outside the initializing thread.
         const worker = struct {
-            /// Attempts start or stop and records any error; read `result` after joining.
+            /// Attempts start or stop and records any error.
+            ///
+            /// Read `result` after joining.
             fn run(eb: *Bus, result: *?anyerror, start_bus: bool) void {
                 const operation = if (start_bus) eb.start() else eb.stop();
                 operation catch |err| {
@@ -84,7 +86,9 @@ test "start and stop require lifecycle owner" {
 
 test "write safety limit caches the slowest consumer's progress" {
     const handler = struct {
-        /// Acknowledges the entire batch; these tests advance consumer counters directly.
+        /// Acknowledges the entire batch.
+        ///
+        /// These tests advance consumer counters directly.
         fn handle(events: []const usize) usize {
             return events.len;
         }
@@ -122,7 +126,9 @@ test "write safety limit caches the slowest consumer's progress" {
 
 test "write safety limit handles no consumers and the sequence upper bound" {
     const handler = struct {
-        /// Acknowledges the entire batch; these tests advance consumer counters directly.
+        /// Acknowledges the entire batch.
+        ///
+        /// These tests advance consumer counters directly.
         fn handle(events: []const usize) usize {
             return events.len;
         }

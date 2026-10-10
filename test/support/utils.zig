@@ -5,6 +5,7 @@ const Gate = @import("synchronization.zig").Gate;
 const Counter = @import("synchronization.zig").Counter;
 
 /// Creates an isolated single-event recorder for `id`, storing up to `event_count` values.
+///
 /// Only its handler writes recorded values; reset before starting and inspect after joining.
 pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
     return struct {
@@ -14,7 +15,9 @@ pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
         pub var entered: ?*Counter = null;
         var unique_id = id;
 
-        /// Clears progress and optional pause controls; no handler calls may be in flight.
+        /// Clears progress and optional pause controls.
+        ///
+        /// No handler calls may be in flight.
         pub fn reset() void {
             count = 0;
             gate = null;
@@ -22,6 +25,7 @@ pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
         }
 
         /// Records one event, optionally signaling `entered` and waiting on `gate` on its first call.
+        ///
         /// Requires a one-event batch and a non-null gate whenever `entered` is set.
         pub fn handle(events: []const usize) usize {
             std.debug.assert(events.len == 1);
@@ -52,6 +56,7 @@ pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
 }
 
 /// Opens the handlers' gate only after draining begins, forcing queued events through `stop()`.
+///
 /// Run on a separate thread while the lifecycle owner stops the bus.
 pub fn releaseWhenDraining(bus: anytype, gate: *Gate) void {
     while (bus.state.load(.acquire) != .draining) std.Thread.yield() catch {};
