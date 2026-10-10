@@ -21,7 +21,7 @@ import build as benchmark_build
 from build import BIN, ROOT, adapter_hashes, tree_hash
 
 IMPLEMENTATIONS = ("zigrupt", "java", "rust")
-TOPOLOGIES = ((1, 1), (4, 1), (1, 3), (3, 3))
+TOPOLOGIES = ((1, 1), (2, 1), (2, 2), (4, 1), (1, 3), (3, 3))
 LATENCY_FRACTIONS = (0.5, 0.6, 0.7, 0.8, 0.9, 0.95)
 JVM_FLAGS = [
     "-Xms256m",

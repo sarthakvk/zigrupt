@@ -280,6 +280,8 @@ fn Harness(comptime words: usize, comptime producers: usize, comptime consumers:
 /// Selects the compile-time harness specialization for a requested topology.
 fn dispatch(comptime words: usize, p: usize, c: usize, args: Args) !void {
     if (p == 1 and c == 1) return Harness(words, 1, 1).run(args);
+    if (p == 2 and c == 1) return Harness(words, 2, 1).run(args);
+    if (p == 2 and c == 2) return Harness(words, 2, 2).run(args);
     if (p == 4 and c == 1) return Harness(words, 4, 1).run(args);
     if (p == 1 and c == 3) return Harness(words, 1, 3).run(args);
     if (p == 3 and c == 3) return Harness(words, 3, 3).run(args);

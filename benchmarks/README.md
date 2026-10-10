@@ -15,9 +15,12 @@ devbox run bench --help
 
 The command builds missing or stale adapters from sources pinned in `sources.json`
 and creates a new directory under `benchmarks/results/` for each run.
-`--standalone` builds only Zigrupt and does not fetch the competitors. A full
-performance run needs six physical cores of one type on one socket. Use
-`--check-only` for correctness checks, or `--smoke` for a short functional run.
+`--standalone` builds only Zigrupt and does not fetch the competitors. The suite
+covers `1p1c`, `2p1c`, `2p2c`, `4p1c`, `1p3c`, and `3p3c`. Each performance
+case needs one physical core per producer and consumer, of one type on one
+socket; cases exceeding the available cores are skipped. `2p1c` needs three
+cores, `2p2c` needs four, and running every case needs six. Use `--check-only`
+for correctness checks, or `--smoke` for a short functional run.
 The default is five independent repeats with a 3-second warmup and 2-second
 measurement target. Pass `--output results/name` to choose a directory within
 `benchmarks/`; an existing output directory is rejected. Results are local

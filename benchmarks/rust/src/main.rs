@@ -359,10 +359,11 @@ fn run<const W: usize>(a: Args) {
             handles.push(p);
             measure(handles, s);
         } else {
-            let p = builder
-                .handle_events_with(handler(Arc::clone(&s), 1))
-                .handle_events_with(handler(Arc::clone(&s), 2))
-                .build();
+            let mut builder = builder.handle_events_with(handler(Arc::clone(&s), 1));
+            if s.args.c == 3 {
+                builder = builder.handle_events_with(handler(Arc::clone(&s), 2));
+            }
+            let p = builder.build();
             let mut handles: Vec<_> = (1..s.args.p).map(|_| p.clone()).collect();
             handles.push(p);
             measure(handles, s);
@@ -387,7 +388,10 @@ fn main() {
         cpus: n[8..].iter().map(|&v| v as i32).collect(),
     };
     assert_eq!(a.cpus.len(), a.p + a.c);
-    assert!(matches!((a.p, a.c), (1, 1) | (4, 1) | (1, 3) | (3, 3)));
+    assert!(matches!(
+        (a.p, a.c),
+        (1, 1) | (2, 1) | (2, 2) | (4, 1) | (1, 3) | (3, 3)
+    ));
     match n[3] {
         8 => run::<1>(a),
         64 => run::<8>(a),
