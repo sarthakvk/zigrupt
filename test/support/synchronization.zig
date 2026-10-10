@@ -1,3 +1,5 @@
+//! Blocking gates and counters for coordinating test threads without timing assumptions.
+
 const std = @import("std");
 const io = std.testing.io;
 

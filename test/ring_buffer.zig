@@ -1,3 +1,5 @@
+//! Initialization, lifecycle ownership, and cached write-safety checks for both producer modes.
+
 const std = @import("std");
 const RingBufferEventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
@@ -54,7 +56,9 @@ test "start and stop require lifecycle owner" {
         var bus = try Bus.init(std.testing.allocator, 1024, 1);
         defer bus.deinit();
 
+        // Worker for attempting lifecycle operations outside the initializing thread.
         const worker = struct {
+            /// Attempts start or stop and records any error; read `result` after joining.
             fn run(eb: *Bus, result: *?anyerror, start_bus: bool) void {
                 const operation = if (start_bus) eb.start() else eb.stop();
                 operation catch |err| {
@@ -80,6 +84,7 @@ test "start and stop require lifecycle owner" {
 
 test "write safety limit caches the slowest consumer's progress" {
     const handler = struct {
+        /// Acknowledges the entire batch; these tests advance consumer counters directly.
         fn handle(events: []const usize) usize {
             return events.len;
         }
@@ -117,6 +122,7 @@ test "write safety limit caches the slowest consumer's progress" {
 
 test "write safety limit handles no consumers and the sequence upper bound" {
     const handler = struct {
+        /// Acknowledges the entire batch; these tests advance consumer counters directly.
         fn handle(events: []const usize) usize {
             return events.len;
         }
