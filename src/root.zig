@@ -5,10 +5,6 @@ pub const waiting_strategy = @import("waiting_strategy.zig");
 pub const EventBus = event_bus.RingBufferEventBus;
 pub const EventHandler = event_bus.EventHandler;
 
-pub fn hello() void {
-    std.debug.print("hello, from zigrupt lib!!!\n", .{});
-}
-
 test {
     std.testing.refAllDecls(@This());
 }

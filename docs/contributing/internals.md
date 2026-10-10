@@ -8,13 +8,13 @@ For application code, use the [public API](/reference/api/) and
 
 ## Source map
 
-| File | Responsibility |
-| --- | --- |
-| `src/root.zig` | Public aliases and waiting-strategy module export |
-| `src/ring_buffer.zig` | Bus type factory, sequencers, slot publication, consumer loops, lifecycle |
-| `src/waiting_strategy.zig` | Strategy signature validation and BusySpin |
-| `test/` | Behavior evidence for single/multi-producer operation, batching, lifecycle, waiting |
-| `benchmarks/` | Cross-language benchmark adapters, correctness checks, and throughput/latency measurements |
+| File                       | Responsibility                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| `src/root.zig`             | Public aliases and waiting-strategy module export                                          |
+| `src/ring_buffer.zig`      | Bus type factory, sequencers, slot publication, consumer loops, lifecycle                  |
+| `src/waiting_strategy.zig` | Strategy signature validation and BusySpin                                                 |
+| `test/`                    | Behavior evidence for single/multi-producer operation, batching, lifecycle, waiting        |
+| `benchmarks/`              | Cross-language benchmark adapters, correctness checks, and throughput/latency measurements |
 
 ## Sequences and slot reuse
 
@@ -25,7 +25,7 @@ therefore occupies index 1 except at capacity 1; code must not assume index 0
 is the first publication.
 
 The single-producer sequencer advances one producer's cursor; the multi-producer
-sequencer claims positions with atomic compare-and-swap. Publication markers
+sequencer claims positions with atomic fetch_add RMW operation. Publication markers
 identify which sequence occupies each slot. Claims alone do not publish data:
 consumers wait at a publication gap rather than skip to a later event.
 
