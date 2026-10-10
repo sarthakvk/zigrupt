@@ -9,6 +9,8 @@ pub const waiting_strategy = @import("waiting_strategy.zig");
 pub const EventBus = event_bus.EventBus;
 /// Callback type that acknowledges a consumed prefix of an event batch.
 pub const EventHandler = event_bus.EventHandler;
+/// Fixed-capacity event storage indexed by sequence.
+pub const RingBuffer = @import("ring_buffer.zig").RingBuffer;
 
 test {
     std.testing.refAllDecls(@This());
