@@ -11,7 +11,7 @@ what callers can use today.
 ## Setup
 
 Install Zig **0.16.0** and verify `zig version`. An optional Devbox environment is
-available via `devbox shell`. Its current `zig@latest` selection can drift, so
+available via `devbox shell`. Its current `zig@0.16.0` selection can drift, so
 verify that it resolves to 0.16.0 before reproducing CI. Run the commands below
 directly; the existing Devbox `test` script is a placeholder.
 
@@ -104,7 +104,7 @@ backpressure, and shutdown where relevant.
 
 ## Publishing configuration
 
-Cloudflare Pages serves https://zigrupt.sarthakvk.com/ from the site root. The
+Cloudflare Pages serves <https://zigrupt.sarthakvk.com/> from the site root. The
 `.github/workflows/docs-pages.yml` builds, checks, and publishes the site on pushes
 to `main` that change documentation inputs (the same paths used by CI's docs
 filter). Release tags matching `vX.Y.Z` and manual runs always publish, even when
