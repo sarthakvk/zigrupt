@@ -11,7 +11,7 @@ For application code, use the [public API](/reference/api/) and
 | File                       | Responsibility                                                                             |
 | -------------------------- | ------------------------------------------------------------------------------------------ |
 | `src/root.zig`             | Public aliases and waiting-strategy module export                                          |
-| `src/ring_buffer.zig`      | Bus type factory, sequencers, slot publication, consumer loops, lifecycle                  |
+| `src/event_bus.zig`      | Bus type factory, sequencers, slot publication, consumer loops, lifecycle                  |
 | `src/waiting_strategy.zig` | Strategy signature validation and BusySpin                                                 |
 | `test/`                    | Behavior evidence for single/multi-producer operation, batching, lifecycle, waiting        |
 | `benchmarks/`              | Cross-language benchmark adapters, correctness checks, and throughput/latency measurements |

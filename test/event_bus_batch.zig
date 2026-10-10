@@ -1,7 +1,7 @@
 //! Batch sizing, wrap boundaries, partial consumption, and publication-gap tests in both bus phases.
 
 const std = @import("std");
-const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
@@ -85,7 +85,7 @@ const handlers = [_]EventHandler(usize){ First.handle, Second.handle };
 
 /// Creates a bus type for the chosen producer mode with both batch recorders attached.
 fn Bus(comptime multi_producer: bool) type {
-    return RingBufferEventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+    return EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
 }
 
 /// Releases handlers during draining, or waits for `next_sequence` while running, then stops the bus.

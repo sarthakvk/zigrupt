@@ -1,7 +1,7 @@
 //! Single-producer broadcast, wraparound, backpressure, draining, and restart tests.
 
 const std = @import("std");
-const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
@@ -21,7 +21,7 @@ test "single producer tests" {
     };
     inline for (recorders) |recorder| recorder.reset();
 
-    var bus = try RingBufferEventBus(
+    var bus = try EventBus(
         usize,
         false,
         &handlers,
@@ -54,7 +54,7 @@ const event_count = 512;
 const First = Recorder(0, event_count);
 const Second = Recorder(1, event_count);
 const concurrent_handlers = [_]EventHandler(usize){ First.handle, Second.handle };
-const Bus = RingBufferEventBus(
+const Bus = EventBus(
     usize,
     false,
     &concurrent_handlers,

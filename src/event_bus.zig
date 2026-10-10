@@ -51,7 +51,7 @@ pub const EventBusState = enum(u8) {
 /// Handlers and strategy types are fixed for the bus type; strategies expose `wait() void`.
 ///
 /// Keep the initialized bus at a stable address while running, and do not let sequences overflow.
-pub fn RingBufferEventBus(
+pub fn EventBus(
     comptime T: type,
     multi_producer: bool,
     event_handlers: []const EventHandler(T),

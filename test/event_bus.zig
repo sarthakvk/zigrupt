@@ -1,7 +1,7 @@
 //! Initialization, lifecycle ownership, and cached write-safety checks for both producer modes.
 
 const std = @import("std");
-const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Recorder = @import("support/utils.zig").Recorder;
@@ -10,7 +10,7 @@ const handlers = [_]EventHandler(usize){Recorder(0, 1).handle};
 
 test "Ring buffer init" {
     inline for (.{ false, true }) |multi_producer| {
-        const Bus = RingBufferEventBus(
+        const Bus = EventBus(
             usize,
             multi_producer,
             &handlers,
@@ -27,7 +27,7 @@ test "Ring buffer init" {
 
 test "DuplicateStart" {
     inline for (.{ false, true }) |multi_producer| {
-        const Bus = RingBufferEventBus(
+        const Bus = EventBus(
             usize,
             multi_producer,
             &handlers,
@@ -46,7 +46,7 @@ test "DuplicateStart" {
 
 test "start and stop require lifecycle owner" {
     inline for (.{ false, true }) |multi_producer| {
-        const Bus = RingBufferEventBus(
+        const Bus = EventBus(
             usize,
             multi_producer,
             &handlers,
@@ -97,7 +97,7 @@ test "write safety limit caches the slowest consumer's progress" {
 
     inline for (.{ false, true }) |multi_producer| {
         for ([_]usize{ 1, 8 }) |capacity| {
-            const Bus = RingBufferEventBus(usize, multi_producer, &test_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            const Bus = EventBus(usize, multi_producer, &test_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
             var bus = try Bus.init(std.testing.allocator, capacity, 1);
             defer bus.deinit();
 
@@ -137,7 +137,7 @@ test "write safety limit handles no consumers and the sequence upper bound" {
 
     inline for (.{ false, true }) |multi_producer| {
         inline for (.{ test_handlers[0..0], test_handlers[0..] }) |event_handlers| {
-            const Bus = RingBufferEventBus(usize, multi_producer, event_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            const Bus = EventBus(usize, multi_producer, event_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
             var bus = try Bus.init(std.testing.allocator, 8, 1);
             defer bus.deinit();
 
