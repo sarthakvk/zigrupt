@@ -8,7 +8,7 @@ const Recorder = @import("support/utils.zig").Recorder;
 
 const handlers = [_]EventHandler(usize){Recorder(0, 1).handle};
 
-test "Ring buffer init" {
+test "EventBus init" {
     inline for (.{ false, true }) |multi_producer| {
         const Bus = EventBus(
             usize,
@@ -21,7 +21,23 @@ test "Ring buffer init" {
         defer bus.deinit();
 
         try std.testing.expectEqual(1, bus.max_batch_size);
-        try std.testing.expectError(error.IncorrectBufferSize, Bus.init(std.testing.allocator, 120, 1));
+        try std.testing.expectEqual(1024, bus.buffer.slice(0, 1024).len);
+        for ([_]usize{ 0, 3, 120 }) |buffer_size| {
+            try std.testing.expectError(error.IncorrectBufferSize, Bus.init(std.testing.failing_allocator, buffer_size, 1));
+        }
+    }
+}
+
+test "EventBus init releases ring storage when later allocations fail" {
+    inline for (.{ false, true }) |multi_producer| {
+        const Check = struct {
+            fn initAndDeinit(allocator: std.mem.Allocator) !void {
+                const Bus = EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+                var bus = try Bus.init(allocator, 8, 1);
+                defer bus.deinit();
+            }
+        };
+        try std.testing.checkAllAllocationFailures(std.testing.allocator, Check.initAndDeinit, .{});
     }
 }
 

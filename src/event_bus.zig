@@ -4,6 +4,7 @@ const std = @import("std");
 const atomic = std.atomic;
 const waiting_strategy = @import("waiting_strategy.zig");
 const sequencer = @import("sequencer.zig");
+const RingBuffer = @import("ring_buffer.zig").RingBuffer;
 
 const mem = std.mem;
 const PaddedAtomicSeq = sequencer.PaddedAtomicSeq;
@@ -64,7 +65,7 @@ pub fn EventBus(
     const Sequencer = if (multi_producer) sequencer.MultiProducerSequencer else sequencer.SingleProducerSequencer;
 
     return struct {
-        buffer: []T,
+        buffer: RingBuffer(T),
         buffer_seq: []atomic.Value(usize),
         max_batch_size: usize,
         consumer_seq: []PaddedAtomicSeq,
@@ -91,8 +92,8 @@ pub fn EventBus(
 
             if (max_batch_size == 0 or max_batch_size > buffer_size) return EventBusError.IncorrectBatchSize;
 
-            const buffer = try allocator.alloc(T, buffer_size);
-            errdefer allocator.free(buffer);
+            var buffer = try RingBuffer(T).init(allocator, buffer_size);
+            errdefer buffer.deinit();
 
             const buffer_seq = try allocator.alloc(atomic.Value(usize), buffer_size);
             errdefer allocator.free(buffer_seq);
@@ -126,7 +127,7 @@ pub fn EventBus(
         ///
         /// Does not join threads or release resources referenced by event values.
         pub fn deinit(self: *Self) void {
-            self.allocator.free(self.buffer);
+            self.buffer.deinit();
             self.allocator.free(self.buffer_seq);
             self.allocator.free(self.consumer_seq);
             self.allocator.free(self.threads);
@@ -223,7 +224,7 @@ pub fn EventBus(
                     continue;
                 }
                 const index = c_seq & self.mask;
-                const limit = @min(self.max_batch_size, self.buffer.len - index);
+                const limit = @min(self.max_batch_size, self.buffer_seq.len - index);
                 var batch_size: usize = 1;
 
                 while (batch_size < limit) : (batch_size += 1) {
@@ -232,7 +233,7 @@ pub fn EventBus(
                     if (published != expected) break;
                 }
 
-                const events_slice = self.buffer[index..][0..batch_size];
+                const events_slice = self.buffer.slice(c_seq, batch_size);
                 c_seq += handler(events_slice);
                 self.consumer_seq[handler_id].value.store(c_seq, .release);
             }
@@ -250,7 +251,7 @@ pub fn EventBus(
                 if (buffer_seq == 0 or c_seq > buffer_seq) break;
 
                 const index = c_seq & self.mask;
-                const limit = @min(self.max_batch_size, self.buffer.len - index, cursor - c_seq);
+                const limit = @min(self.max_batch_size, self.buffer_seq.len - index, cursor - c_seq);
                 var batch_size: usize = 1;
 
                 while (batch_size < limit) : (batch_size += 1) {
@@ -259,7 +260,7 @@ pub fn EventBus(
                     if (published != expected) break;
                 }
 
-                const events_slice = self.buffer[index..][0..batch_size];
+                const events_slice = self.buffer.slice(c_seq, batch_size);
 
                 c_seq += handler(events_slice);
                 self.consumer_seq[handler_id].value.store(c_seq, .release);
@@ -294,7 +295,7 @@ pub fn EventBus(
 
             // Publish only after the event write so acquiring consumers see initialized data.
             const seq_idx = seq & self.mask;
-            self.buffer[seq_idx] = event;
+            self.buffer.save(seq, event);
             self.buffer_seq[seq_idx].store(seq, .release);
         }
 
