@@ -1,6 +1,6 @@
-<p align="center">
-  <img src="docs/assets/zigrupt_logo.png" alt="Zigrupt logo" width="480">
-</p>
+# Zigrupt
+
+![Zigrupt logo](docs/assets/zigrupt_logo.png)
 
 Zigrupt is a high-performance event broadcasting library for Zig, heavily
 inspired by the original [LMAX Disruptor](https://github.com/LMAX-Exchange/disruptor).
@@ -84,9 +84,14 @@ referenced data alive through consumption, and stop before `deinit()`.
 
 ## Documentation and development
 
-- [Full documentation source](docs/index.md) and [concepts](docs/concepts.md).
-- [Executable examples](examples/README.md) and [existing behavior tests](test/): `zig build test`.
-- [Benchmark methodology and caveats](benchmarks/README.md): `devbox run bench --standalone --smoke` for a short Zig-only check on Linux.
-- [Contributing](CONTRIBUTING.md), including formatting, installation verification, and documentation checks.
-- [Published documentation](https://zigrupt.sarthakvk.com/) and [local preview/build instructions](CONTRIBUTING.md#documentation-workflow).
+- [Full documentation source](docs/index.md), [concepts](docs/concepts.md),
+  and [usage guides](docs/guides/producers.md).
+- [Executable examples](examples/README.md) and [existing behavior tests](test/):
+  `zig build test`.
+- [Benchmark methodology and caveats](benchmarks/README.md):
+  `devbox run bench --standalone --smoke` for a short Zig-only check on Linux.
+- [Contributing](CONTRIBUTING.md), including formatting, installation verification,
+  and documentation checks.
+- [Published documentation](https://zigrupt.sarthakvk.com/) and
+  [local preview/build instructions](CONTRIBUTING.md#documentation-workflow).
 - [MIT license](LICENSE).

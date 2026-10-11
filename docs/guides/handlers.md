@@ -3,9 +3,9 @@ title: Handlers and application context
 description: Use plain callback functions and pass context with explicit ownership.
 ---
 
-`EventHandler(T)` is `*const fn ([]const T) usize`. A handler receives a nonempty,
-contiguous slice of events and returns the number it consumed, starting at index
-zero. It has no error return, closure capture, or separate context argument.
+A handler is a plain callback function that receives a nonempty, contiguous
+slice of events and returns the number it consumed, starting at index zero.
+It has no error return, closure capture, or separate context argument.
 Keep application error policy inside the handler: for example, record an error
 in synchronized application state and acknowledge according to your policy.
 The bus does not automatically retry failed operations or undo side effects.
