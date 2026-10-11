@@ -11,7 +11,8 @@ fn cachedLimit(comptime multi_producer: bool, coordinator: *const Sequencer(mult
 
 test "sequencer starts with unpublished slots and next-unread consumers at one" {
     inline for (.{ false, true }) |multi_producer| {
-        for ([_]usize{ 1, 8 }) |capacity| {
+        for (0..20) |exp| {
+            const capacity = std.math.pow(usize, 2, exp);
             var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, capacity, 2);
             defer coordinator.deinit();
 
@@ -27,7 +28,8 @@ test "sequencer starts with unpublished slots and next-unread consumers at one" 
             try std.testing.expectEqual(capacity + 3, coordinator.nextClaimSequence());
             try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, null));
         }
-        for ([_]usize{ 0, 3, 120 }) |capacity| {
+        for (0..1000) |capacity| {
+            if (capacity > 0 and (capacity & (capacity - 1) == 0)) continue;
             try std.testing.expectError(error.IncorrectBufferSize, Sequencer(multi_producer).init(std.testing.failing_allocator, capacity, 1, 2));
         }
     }
