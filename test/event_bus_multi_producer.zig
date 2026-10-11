@@ -114,7 +114,7 @@ test "MultiProducer concurrent producers deliver exactly once across wraps" {
         try std.testing.expectEqual(.running, bus.state.load(.acquire));
         try bus.stop();
         try std.testing.expectEqual(.idle, bus.state.load(.acquire));
-        try std.testing.expectEqual(event_count + 1, bus.sequencer.current());
+        try std.testing.expectEqual(event_count + 1, bus.sequencer.nextClaimSequence());
         try expectProduced(0, events_per_producer);
     }
 }
@@ -156,14 +156,14 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
     }
     // Wait for actual claims, not just a signal sent before calling produce.
     // Sequences start at 1, and the cursor points to the next unclaimed sequence.
-    while (bus.sequencer.current() < capacity + producer_count + 1) std.Thread.yield() catch {};
+    while (bus.sequencer.nextClaimSequence() < capacity + producer_count + 1) std.Thread.yield() catch {};
     const completed_while_full = producers.completed.get();
 
     // Advancing only the first handler must not free slots still held by the second.
     first_gate.open();
-    while (bus.consumer_seq[0].value.load(.acquire) < capacity + 1) std.Thread.yield() catch {};
+    while (bus.sequencer.consumerSequence(0, .acquire) < capacity + 1) std.Thread.yield() catch {};
     const completed_with_slow_handler = producers.completed.get();
-    const slow_handler_sequence = bus.consumer_seq[1].value.load(.acquire);
+    const slow_handler_sequence = bus.sequencer.consumerSequence(1, .acquire);
 
     second_gate.open();
     producers.join();
@@ -246,12 +246,12 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
         gate.open();
         later.join();
 
-        for (bus.consumer_seq, &sequences_at_gap) |*consumer, *sequence| {
-            while (consumer.value.load(.acquire) < capacity + 1) std.Thread.yield() catch {};
-            sequence.* = consumer.value.load(.acquire);
+        for (&sequences_at_gap, 0..) |*sequence, consumer_id| {
+            while (bus.sequencer.consumerSequence(consumer_id, .acquire) < capacity + 1) std.Thread.yield() catch {};
+            sequence.* = bus.sequencer.consumerSequence(consumer_id, .acquire);
         }
-        earlier_publication = bus.buffer_seq[(capacity + 1) & bus.mask].load(.acquire);
-        later_publication = bus.buffer_seq[(capacity + 2) & bus.mask].load(.acquire);
+        earlier_publication = bus.sequencer.buffer_seq[(capacity + 1) & bus.sequencer.mask].load(.acquire);
+        later_publication = bus.sequencer.buffer_seq[(capacity + 2) & bus.sequencer.mask].load(.acquire);
     }
     try bus.stop();
 
@@ -290,7 +290,7 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     try bus.stop();
     releaser.join();
     try expectProduced(0, batch_per_producer);
-    try std.testing.expectEqual(capacity + 1, bus.sequencer.current());
+    try std.testing.expectEqual(capacity + 1, bus.sequencer.nextClaimSequence());
 
     // Keep the recorded events and sequences to detect replays after restart.
     First.entered = null;
@@ -300,6 +300,6 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     try next_producers.start(&bus, batch_per_producer, batch_per_producer);
     next_producers.join();
     try bus.stop();
-    try std.testing.expectEqual(2 * capacity + 1, bus.sequencer.current());
+    try std.testing.expectEqual(2 * capacity + 1, bus.sequencer.nextClaimSequence());
     try expectProduced(0, 2 * batch_per_producer);
 }

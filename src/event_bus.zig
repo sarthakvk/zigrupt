@@ -7,7 +7,6 @@ const sequencer = @import("sequencer.zig");
 const RingBuffer = @import("ring_buffer.zig").RingBuffer;
 
 const mem = std.mem;
-const PaddedAtomicSeq = sequencer.PaddedAtomicSeq;
 
 /// Callback that returns the number of events consumed from the start of a batch.
 ///
@@ -26,6 +25,7 @@ pub const EventBusError = error{
     InvalidConsumerID,
     IncorrectBufferSize,
     IncorrectBatchSize,
+    NoHandlersRegistered,
     BusIdle,
     BusStarting,
     BusRunning,
@@ -62,14 +62,11 @@ pub fn EventBus(
     waiting_strategy.validateWaitingStrategy(PublisherWaitingStrategy);
     waiting_strategy.validateWaitingStrategy(ConsumerWaitingStrategy);
 
-    const Sequencer = if (multi_producer) sequencer.MultiProducerSequencer else sequencer.SingleProducerSequencer;
+    const Sequencer = sequencer.Sequencer(multi_producer);
 
     return struct {
         buffer: RingBuffer(T),
-        buffer_seq: []atomic.Value(usize),
         max_batch_size: usize,
-        consumer_seq: []PaddedAtomicSeq,
-        mask: usize,
         state: atomic.Value(EventBusState),
 
         sequencer: Sequencer,
@@ -95,13 +92,8 @@ pub fn EventBus(
             var buffer = try RingBuffer(T).init(allocator, buffer_size);
             errdefer buffer.deinit();
 
-            const buffer_seq = try allocator.alloc(atomic.Value(usize), buffer_size);
-            errdefer allocator.free(buffer_seq);
-            @memset(buffer_seq, .init(0));
-
-            const consumer_seq = try allocator.alloc(PaddedAtomicSeq, event_handlers.len);
-            errdefer allocator.free(consumer_seq);
-            @memset(consumer_seq, .{ .value = .init(1) });
+            var sequence_coordinator = try Sequencer.init(allocator, buffer_size, event_handlers.len);
+            errdefer sequence_coordinator.deinit();
 
             const threads = try allocator.alloc(?std.Thread, event_handlers.len);
             errdefer allocator.free(threads);
@@ -109,12 +101,9 @@ pub fn EventBus(
 
             return .{
                 .buffer = buffer,
-                .buffer_seq = buffer_seq,
                 .max_batch_size = max_batch_size,
-                .consumer_seq = consumer_seq,
-                .mask = (buffer_size - 1),
                 .state = .init(.idle),
-                .sequencer = Sequencer.init(buffer_size),
+                .sequencer = sequence_coordinator,
                 .threads = threads,
                 .lifecycle_owner = std.Thread.getCurrentId(),
                 .allocator = allocator,
@@ -128,8 +117,7 @@ pub fn EventBus(
         /// Does not join threads or release resources referenced by event values.
         pub fn deinit(self: *Self) void {
             self.buffer.deinit();
-            self.allocator.free(self.buffer_seq);
-            self.allocator.free(self.consumer_seq);
+            self.sequencer.deinit();
             self.allocator.free(self.threads);
         }
 
@@ -137,6 +125,7 @@ pub fn EventBus(
         ///
         /// Requires the initializing thread (`NotLifecycleOwner`) and an idle bus
         /// (`BusStarting`, `BusRunning`, or `BusDraining` otherwise).
+        /// An empty handler list returns `NoHandlersRegistered` and leaves the bus idle.
         ///
         /// Thread-spawn errors are propagated after joining any threads already started.
         pub fn start(self: *Self) !void {
@@ -152,6 +141,8 @@ pub fn EventBus(
                 .starting => return EventBusError.BusStarting,
                 .idle => {},
             }
+
+            if (event_handlers.len == 0) return EventBusError.NoHandlersRegistered;
 
             self.state.store(.starting, .monotonic);
 
@@ -209,7 +200,7 @@ pub fn EventBus(
         /// Acquire publication loads expose event data; release progress stores permit slot reuse.
         fn handleEvent(self: *Self, handler_id: usize) void {
             const handler = event_handlers[handler_id];
-            var c_seq = self.consumer_seq[handler_id].value.load(.monotonic);
+            var c_seq = self.sequencer.consumerSequence(handler_id, .monotonic);
 
             var state = self.state.load(.monotonic);
 
@@ -217,25 +208,15 @@ pub fn EventBus(
             while (state == .starting) : (state = self.state.load(.monotonic)) ConsumerWaitingStrategy.wait();
 
             while (state == .running) : (state = self.state.load(.monotonic)) {
-                const buffer_seq = self.buffer_seq[(c_seq & self.mask)].load(.acquire);
-
-                if (buffer_seq == 0 or c_seq > buffer_seq) {
+                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size, null);
+                if (batch_size == 0) {
                     ConsumerWaitingStrategy.wait();
                     continue;
-                }
-                const index = c_seq & self.mask;
-                const limit = @min(self.max_batch_size, self.buffer_seq.len - index);
-                var batch_size: usize = 1;
-
-                while (batch_size < limit) : (batch_size += 1) {
-                    const expected = c_seq + batch_size;
-                    const published = self.buffer_seq[index + batch_size].load(.acquire);
-                    if (published != expected) break;
                 }
 
                 const events_slice = self.buffer.slice(c_seq, batch_size);
                 c_seq += handler(events_slice);
-                self.consumer_seq[handler_id].value.store(c_seq, .release);
+                self.sequencer.acknowledge(handler_id, c_seq);
             }
 
             // Invariant: after running, the state can only be draining
@@ -243,27 +224,15 @@ pub fn EventBus(
             std.debug.assert(state == .draining);
 
             // Snapshot claims for draining; an unpublished gap ends the drain below.
-            const cursor = self.sequencer.current();
+            const cursor = self.sequencer.nextClaimSequence();
 
             while (c_seq < cursor) {
-                const buffer_seq = self.buffer_seq[(c_seq & self.mask)].load(.acquire);
-
-                if (buffer_seq == 0 or c_seq > buffer_seq) break;
-
-                const index = c_seq & self.mask;
-                const limit = @min(self.max_batch_size, self.buffer_seq.len - index, cursor - c_seq);
-                var batch_size: usize = 1;
-
-                while (batch_size < limit) : (batch_size += 1) {
-                    const expected = c_seq + batch_size;
-                    const published = self.buffer_seq[index + batch_size].load(.acquire);
-                    if (published != expected) break;
-                }
+                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size, cursor);
+                if (batch_size == 0) break;
 
                 const events_slice = self.buffer.slice(c_seq, batch_size);
-
                 c_seq += handler(events_slice);
-                self.consumer_seq[handler_id].value.store(c_seq, .release);
+                self.sequencer.acknowledge(handler_id, c_seq);
             }
         }
 
@@ -289,14 +258,13 @@ pub fn EventBus(
             const seq = self.sequencer.claim();
 
             // wait until the slot is safe to write
-            while (!self.sequencer.isSlotSafeToWrite(seq, self.consumer_seq)) {
+            while (!self.sequencer.isSlotSafeToWrite(seq)) {
                 PublisherWaitingStrategy.wait();
             }
 
             // Publish only after the event write so acquiring consumers see initialized data.
-            const seq_idx = seq & self.mask;
             self.buffer.save(seq, event);
-            self.buffer_seq[seq_idx].store(seq, .release);
+            self.sequencer.publish(seq);
         }
 
         /// Returns `NotLifecycleOwner` when called outside the initializing thread.

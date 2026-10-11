@@ -68,8 +68,8 @@ fn publish(bus: *Bus, start: usize, len: usize) void {
         // Keep the order/wrap test from exercising backpressure: wait for every
         // handler to finish with the slot. The full-buffer test bypasses this helper.
         if (value >= capacity) {
-            for (bus.consumer_seq) |*consumer| {
-                while (consumer.value.load(.acquire) <= value + 1 - capacity) {
+            for (concurrent_handlers, 0..) |_, consumer_id| {
+                while (bus.sequencer.consumerSequence(consumer_id, .acquire) <= value + 1 - capacity) {
                     std.Thread.yield() catch {};
                 }
             }

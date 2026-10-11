@@ -99,8 +99,8 @@ fn finish(bus: anytype, gate: *Gate, draining: bool, next_sequence: usize) !void
         try bus.stop();
     } else {
         gate.open();
-        for (bus.consumer_seq) |*consumer| {
-            while (consumer.value.load(.acquire) < next_sequence) std.Thread.yield() catch {};
+        for (0..bus.sequencer.consumer_seq.len) |consumer_id| {
+            while (bus.sequencer.consumerSequence(consumer_id, .acquire) < next_sequence) std.Thread.yield() catch {};
         }
         try bus.stop();
     }
@@ -155,8 +155,8 @@ test "running and draining batches respect size, wrap and the end of the queue" 
                     try recorder.expectBatches(case.lengths);
                     try recorder.expectRange(1, case.events);
                 }
-                for (bus.consumer_seq) |*consumer| {
-                    try std.testing.expectEqual(case.events + 1, consumer.value.load(.acquire));
+                for (handlers, 0..) |_, consumer_id| {
+                    try std.testing.expectEqual(case.events + 1, bus.sequencer.consumerSequence(consumer_id, .acquire));
                 }
             }
         }
@@ -194,8 +194,8 @@ test "partial and zero consumption retry the unconsumed suffix independently per
                 try std.testing.expectEqualSlices(usize, &expected_first, Second.first_values[0..Second.calls]);
                 try First.expectRange(start, capacity);
                 try Second.expectRange(start, capacity);
-                for (bus.consumer_seq) |*consumer| {
-                    try std.testing.expectEqual(start + capacity, consumer.value.load(.acquire));
+                for (handlers, 0..) |_, consumer_id| {
+                    try std.testing.expectEqual(start + capacity, bus.sequencer.consumerSequence(consumer_id, .acquire));
                 }
             }
         }
@@ -289,7 +289,7 @@ test "running and draining batches stop at unpublished or stale claims before la
             var entered: Counter = .{};
             First.reset(&gate, &entered);
             Second.reset(&gate, &entered);
-            const start = bus.sequencer.current();
+            const start = bus.sequencer.nextClaimSequence();
             try bus.start();
             defer {
                 gate.open();
@@ -303,17 +303,17 @@ test "running and draining batches stop at unpublished or stale claims before la
             const gap = bus.sequencer.claim();
             try std.testing.expectEqual(start + 2, gap);
             for (gap + 1..gap + 4) |value| try bus.produce(value);
-            try std.testing.expectEqual(if (stale) @as(usize, 3) else 0, bus.buffer_seq[gap & bus.mask].load(.acquire));
+            try std.testing.expectEqual(if (stale) @as(usize, 3) else 0, bus.sequencer.buffer_seq[gap & bus.sequencer.mask].load(.acquire));
             try finish(&bus, &gate, draining, gap);
 
             inline for (.{ First, Second }) |recorder| {
                 try recorder.expectBatches(&.{2});
                 try recorder.expectRange(start, 2);
             }
-            for (bus.consumer_seq) |*consumer| {
-                try std.testing.expectEqual(gap, consumer.value.load(.acquire));
+            for (handlers, 0..) |_, consumer_id| {
+                try std.testing.expectEqual(gap, bus.sequencer.consumerSequence(consumer_id, .acquire));
             }
-            try std.testing.expectEqual(gap + 4, bus.sequencer.current());
+            try std.testing.expectEqual(gap + 4, bus.sequencer.nextClaimSequence());
         }
     }
 }
