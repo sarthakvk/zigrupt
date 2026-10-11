@@ -12,6 +12,10 @@ process every event, in order, on their own threads. A fixed-capacity ring
 buffer, lock-free coordination, and attention to CPU cache lines keep the path
 between producers and handlers lean.
 
+:::caution[Warning]
+Zigrupt is under active development. The API is not yet stable and may change.
+:::
+
 ## Why broadcast?
 
 A work queue assigns an event to one worker. zigrupt gives each registered

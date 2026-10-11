@@ -9,7 +9,9 @@ process every event, in order, on their own threads. A fixed-capacity ring
 buffer, lock-free coordination, and attention to CPU cache lines keep the path
 between producers and handlers lean.
 
-zigrupt is under active development (package version 0.0.1). The API may change.
+> [!WARNING]
+> Zigrupt is under active development. The API is not yet stable and may change.
+
 The current implementation supports single/multi-producer operation, broadcast
 handlers, batching, custom waiting strategies, draining, and restart. This is a
 starting point for the library, not its final scope or a claim of full LMAX parity.
