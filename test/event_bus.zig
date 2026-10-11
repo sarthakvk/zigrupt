@@ -1,7 +1,4 @@
 //! Initialization and lifecycle ownership checks for both producer modes.
-//!
-//! These tests isolate configuration and lifecycle errors from event delivery. The test
-//! thread initializes each bus and owns start/stop; worker threads only attempt forbidden calls.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;

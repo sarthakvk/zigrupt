@@ -1,8 +1,4 @@
 //! Sequence-indexed storage, slot reuse, and contiguous slice tests.
-//!
-//! Storage has no publication or consumer tracking: these single-threaded tests read
-//! only initialized slots and explicitly control overwrites. A sequence identifies a
-//! physical slot through masking, not a retained historical event.
 
 const std = @import("std");
 const RingBuffer = @import("zigrupt").RingBuffer;

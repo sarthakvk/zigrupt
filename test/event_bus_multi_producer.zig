@@ -1,9 +1,4 @@
 //! Concurrent-producer ordering, backpressure, publication gaps, draining, and restart tests.
-//!
-//! Values encode producer ID and per-producer offset, not publication sequence. Global
-//! producer interleaving is unspecified, but both handlers must observe the same order.
-//! Gates hold the relevant producers or handlers in place; cursor/marker reads establish
-//! bus progress without sleeps. The test thread owns lifecycle and joins producers before stop.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;

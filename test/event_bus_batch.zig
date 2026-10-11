@@ -1,10 +1,4 @@
 //! Batch sizing, wrap boundaries, partial consumption, and publication-gap tests in both bus phases.
-//!
-//! Event values equal publication sequences, starting at one. With eight slots, sequences
-//! 1..7 are physically contiguous and sequence 8 wraps to index zero.
-//!
-//! Hold each handler's first callback until the queue is fully arranged, then retry it
-//! in either running or draining. This makes expected batch shapes independent of scheduling.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;

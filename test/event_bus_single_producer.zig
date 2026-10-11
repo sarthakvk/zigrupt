@@ -1,8 +1,4 @@
 //! Single-producer broadcast, wraparound, backpressure, draining, and restart tests.
-//!
-//! Event values start at zero, while publication sequences and next-unread cursors start
-//! at one: value `n` occupies sequence `n + 1`. The test thread owns bus lifecycle;
-//! producer threads are joined before stop, and recorder output is read after stop.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;

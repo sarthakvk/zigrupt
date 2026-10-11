@@ -1,9 +1,4 @@
 //! Sequence coordination tests without event storage or handler threads.
-//!
-//! Claims reserve numbers, exact per-slot markers establish publication, and consumers
-//! acknowledge their next unread sequence. These are independent pieces of progress.
-//! Tests drive them directly to isolate gaps, stale markers, and cached capacity limits
-//! from bus lifecycle and callbacks. Concurrent cases coordinate workers with start gates.
 
 const std = @import("std");
 const Sequencer = @import("zigrupt").sequencer.Sequencer;

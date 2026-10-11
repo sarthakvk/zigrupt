@@ -1,7 +1,4 @@
 //! Blocking gates and counters for coordinating test threads without timing assumptions.
-//!
-//! Use gates to hold a phase open and counters to observe how many threads reached it.
-//! A signal proves only that the signaling code ran, not that a later bus operation completed.
 
 const std = @import("std");
 const io = std.testing.io;

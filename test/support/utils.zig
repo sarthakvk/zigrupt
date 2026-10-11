@@ -1,7 +1,4 @@
 //! Event recording and drain synchronization shared by event-bus tests.
-//!
-//! Recorders are handler-owned while a bus runs. Tests configure them before startup
-//! and inspect their non-atomic output after stop has joined the handler threads.
 
 const std = @import("std");
 const Gate = @import("synchronization.zig").Gate;
