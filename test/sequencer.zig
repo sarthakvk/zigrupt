@@ -22,10 +22,10 @@ test "sequencer starts with unpublished slots and next-unread consumers at one" 
                 try std.testing.expectEqual(1, coordinator.consumerSequence(consumer_id, .monotonic));
             }
             for (coordinator.buffer_seq) |*marker| try std.testing.expectEqual(0, marker.load(.acquire));
-            try std.testing.expectEqual(0, coordinator.publishedBatchSize(0, capacity, null));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(0, capacity));
             for (1..capacity + 3) |sequence| try std.testing.expectEqual(sequence, coordinator.claim());
             try std.testing.expectEqual(capacity + 3, coordinator.nextClaimSequence());
-            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, capacity, null));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, capacity));
         }
         for (0..1000) |capacity| {
             if (capacity > 0 and (capacity & (capacity - 1) == 0)) continue;
@@ -102,29 +102,27 @@ test "published batches stop at the first gap and require the exact sequence mar
 
         coordinator.publish(2);
         coordinator.publish(4);
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 8, null));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 8));
         coordinator.publish(1);
-        try std.testing.expectEqual(2, coordinator.publishedBatchSize(1, 8, null));
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(3, 8, null));
-        try std.testing.expectEqual(1, coordinator.publishedBatchSize(4, 8, null));
+        try std.testing.expectEqual(2, coordinator.publishedBatchSize(1, 8));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(3, 8));
+        try std.testing.expectEqual(1, coordinator.publishedBatchSize(4, 8));
         coordinator.publish(3);
-        try std.testing.expectEqual(4, coordinator.publishedBatchSize(1, 8, null));
+        try std.testing.expectEqual(4, coordinator.publishedBatchSize(1, 8));
 
         // Previous-lap markers cannot expose events for a newly reused slot.
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8, null));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8));
         coordinator.publish(9);
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8, 8));
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8, 9));
         coordinator.publish(11);
-        try std.testing.expectEqual(1, coordinator.publishedBatchSize(9, 8, null));
+        try std.testing.expectEqual(1, coordinator.publishedBatchSize(9, 8));
         coordinator.publish(10);
-        try std.testing.expectEqual(3, coordinator.publishedBatchSize(9, 8, null));
+        try std.testing.expectEqual(3, coordinator.publishedBatchSize(9, 8));
         // A newer marker must not be accepted for an older expected sequence either.
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 8, null));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 8));
     }
 }
 
-test "published batches honor size, physical boundaries and exclusive drain ends" {
+test "published batches honor size and physical boundaries" {
     inline for (.{ false, true }) |multi_producer| {
         for ([_]usize{ 1, 8 }) |capacity| {
             var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, 1);
@@ -132,17 +130,37 @@ test "published batches honor size, physical boundaries and exclusive drain ends
             for (1..capacity + 1) |sequence| coordinator.publish(sequence);
 
             const contiguous = if (capacity == 1) 1 else capacity - 1;
-            try std.testing.expectEqual(contiguous, coordinator.publishedBatchSize(1, capacity + 5, null));
-            try std.testing.expectEqual(1, coordinator.publishedBatchSize(capacity, capacity, null));
-            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 0, null));
-            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, capacity, 0));
-            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, capacity, 1));
-            try std.testing.expectEqual(1, coordinator.publishedBatchSize(1, capacity, 2));
-            try std.testing.expectEqual(contiguous, coordinator.publishedBatchSize(1, capacity, capacity + 1));
+            try std.testing.expectEqual(contiguous, coordinator.publishedBatchSize(1, capacity + 5));
+            try std.testing.expectEqual(1, coordinator.publishedBatchSize(capacity, capacity));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 0));
             for (0..capacity + 1) |max_count| {
-                try std.testing.expectEqual(@min(max_count, contiguous), coordinator.publishedBatchSize(1, max_count, null));
+                try std.testing.expectEqual(@min(max_count, contiguous), coordinator.publishedBatchSize(1, max_count));
             }
         }
+    }
+}
+
+test "published batches stop at the first unclaimed sequence after producers finish" {
+    inline for (.{ false, true }) |multi_producer| {
+        const capacity = 8;
+        var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, 1);
+        defer coordinator.deinit();
+
+        for (0..capacity) |_| coordinator.publish(coordinator.claim());
+        const start_sequence = coordinator.nextClaimSequence();
+        coordinator.acknowledge(0, start_sequence);
+
+        const published_count = 3;
+        for (0..published_count) |_| {
+            const sequence = coordinator.claim();
+            try std.testing.expect(coordinator.isSlotSafeToWrite(sequence));
+            coordinator.publish(sequence);
+        }
+        const cursor = coordinator.nextClaimSequence();
+        try std.testing.expectEqual(start_sequence + published_count, cursor);
+        try std.testing.expectEqual(cursor - capacity, coordinator.buffer_seq[cursor & coordinator.mask].load(.acquire));
+        try std.testing.expectEqual(published_count, coordinator.publishedBatchSize(start_sequence, capacity));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(cursor, capacity));
     }
 }
 
@@ -192,10 +210,10 @@ test "concurrent multi-producer claims are unique and later publication cannot h
     }
     for (seen) |claimed| try std.testing.expect(claimed);
     try std.testing.expectEqual(count + 2, coordinator.nextClaimSequence());
-    try std.testing.expectEqual(0, coordinator.publishedBatchSize(gap, count + 1, null));
-    try std.testing.expectEqual(count, coordinator.publishedBatchSize(gap + 1, count, null));
+    try std.testing.expectEqual(0, coordinator.publishedBatchSize(gap, count + 1));
+    try std.testing.expectEqual(count, coordinator.publishedBatchSize(gap + 1, count));
     coordinator.publish(gap);
-    try std.testing.expectEqual(count + 1, coordinator.publishedBatchSize(gap, count + 1, coordinator.nextClaimSequence()));
+    try std.testing.expectEqual(count + 1, coordinator.publishedBatchSize(gap, count + 10));
 }
 
 test "multi-producer capacity cache does not regress under concurrent checks" {

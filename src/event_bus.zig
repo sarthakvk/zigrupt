@@ -208,7 +208,7 @@ pub fn EventBus(
             while (state == .starting) : (state = self.state.load(.monotonic)) ConsumerWaitingStrategy.wait();
 
             while (state == .running) : (state = self.state.load(.monotonic)) {
-                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size, null);
+                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size);
                 if (batch_size == 0) {
                     ConsumerWaitingStrategy.wait();
                     continue;
@@ -227,7 +227,7 @@ pub fn EventBus(
             const cursor = self.sequencer.nextClaimSequence();
 
             while (c_seq < cursor) {
-                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size, cursor);
+                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size);
                 if (batch_size == 0) break;
 
                 const events_slice = self.buffer.slice(c_seq, batch_size);

@@ -71,19 +71,15 @@ pub fn Sequencer(comptime multi_producer: bool) type {
 
         /// Acquire-checks a contiguous published prefix without crossing the physical ring boundary.
         ///
-        /// Stops at any missing or stale marker, `max_count`, or the optional exclusive end.
-        pub fn publishedBatchSize(self: *const Self, first: usize, max_count: usize, end_exclusive: ?usize) usize {
-            if (first == 0) return 0;
-            const index = first & self.mask;
-            var limit = @min(max_count, self.buffer_seq.len - index);
-            if (end_exclusive) |end| {
-                if (end <= first) return 0;
-                limit = @min(limit, end - first);
-            }
+        /// Stops at any missing or stale marker or `max_count`.
+        pub fn publishedBatchSize(self: *const Self, start_sequence: usize, max_count: usize) usize {
+            if (start_sequence == 0) return 0;
+            const index = start_sequence & self.mask;
+            const limit = @min(max_count, self.buffer_seq.len - index);
 
             var count: usize = 0;
             while (count < limit) : (count += 1) {
-                if (self.buffer_seq[index + count].load(.acquire) != first + count) break;
+                if (self.buffer_seq[index + count].load(.acquire) != start_sequence + count) break;
             }
             return count;
         }
