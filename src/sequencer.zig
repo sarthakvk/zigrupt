@@ -1,14 +1,106 @@
-//! Sequencers that assign event sequences and check ring-buffer slot reuse.
+//! Sequence claims, publication tracking, consumer progress, and ring-buffer slot reuse.
 
 const std = @import("std");
 
 /// Cache-line-aligned sequence counter that avoids false sharing between adjacent counters.
-pub const PaddedAtomicSeq = struct {
+const PaddedAtomicSeq = struct {
     value: std.atomic.Value(usize) align(std.atomic.cache_line),
 };
 
+/// Owns sequence coordination independently of event storage, waiting, and lifecycle.
+///
+/// Sequences start at one and must not overflow. Consumers track their next unread sequence.
+pub fn Sequencer(comptime multi_producer: bool) type {
+    const ClaimPolicy = if (multi_producer) MultipleClaimPolicy else SingleClaimPolicy;
+
+    return struct {
+        claim_policy: ClaimPolicy,
+        buffer_seq: []std.atomic.Value(usize),
+        consumer_seq: []PaddedAtomicSeq,
+        mask: usize,
+        allocator: std.mem.Allocator,
+
+        const Self = @This();
+
+        /// Allocates unpublished slot markers and consumer counters starting at one.
+        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, consumer_count: usize) !Self {
+            if (buffer_size == 0 or buffer_size & (buffer_size - 1) != 0) return error.IncorrectBufferSize;
+
+            const buffer_seq = try allocator.alloc(std.atomic.Value(usize), buffer_size);
+            errdefer allocator.free(buffer_seq);
+            @memset(buffer_seq, .init(0));
+
+            const consumer_seq = try allocator.alloc(PaddedAtomicSeq, consumer_count);
+            errdefer allocator.free(consumer_seq);
+            @memset(consumer_seq, .{ .value = .init(1) });
+
+            return .{
+                .claim_policy = ClaimPolicy.init(buffer_size),
+                .buffer_seq = buffer_seq,
+                .consumer_seq = consumer_seq,
+                .mask = buffer_size - 1,
+                .allocator = allocator,
+            };
+        }
+
+        /// Frees coordination storage after all producers and consumers have finished.
+        pub fn deinit(self: *Self) void {
+            self.allocator.free(self.buffer_seq);
+            self.allocator.free(self.consumer_seq);
+        }
+
+        /// Reserves a sequence without waiting for capacity or publishing it.
+        pub fn claim(self: *Self) usize {
+            return self.claim_policy.claim();
+        }
+
+        /// Returns claim progress, which may be ahead of contiguous publication progress.
+        pub fn nextClaimSequence(self: *const Self) usize {
+            return self.claim_policy.nextClaimSequence();
+        }
+
+        /// Checks slot reuse against this sequencer's consumer counters.
+        pub fn isSlotSafeToWrite(self: *Self, sequence: usize) bool {
+            return self.claim_policy.isSlotSafeToWrite(sequence, self.consumer_seq);
+        }
+
+        /// Release-publishes a slot after the caller has written its event.
+        pub fn publish(self: *Self, sequence: usize) void {
+            self.buffer_seq[sequence & self.mask].store(sequence, .release);
+        }
+
+        /// Acquire-checks a contiguous published prefix without crossing the physical ring boundary.
+        ///
+        /// Stops at any missing or stale marker or `max_count`.
+        pub fn publishedBatchSize(self: *const Self, start_sequence: usize, max_count: usize) usize {
+            if (start_sequence == 0) return 0;
+            const index = start_sequence & self.mask;
+            const limit = @min(max_count, self.buffer_seq.len - index);
+
+            var count: usize = 0;
+            while (count < limit) : (count += 1) {
+                if (self.buffer_seq[index + count].load(.acquire) != start_sequence + count) break;
+            }
+            return count;
+        }
+
+        /// Reads next-unread progress with acquire ordering for cross-thread observations.
+        ///
+        /// The owning consumer may use monotonic ordering when loading its startup cursor.
+        pub fn consumerSequence(self: *const Self, consumer_id: usize, comptime ordering: std.builtin.AtomicOrder) usize {
+            comptime std.debug.assert(ordering == .monotonic or ordering == .acquire);
+            return self.consumer_seq[consumer_id].value.load(ordering);
+        }
+
+        /// Release-acknowledges a consumed prefix; only this consumer advances its counter.
+        pub fn acknowledge(self: *Self, consumer_id: usize, next_unread: usize) void {
+            self.consumer_seq[consumer_id].value.store(next_unread, .release);
+        }
+    };
+}
+
 /// Assigns sequences for one producer, caching capacity until consumers must be checked again.
-pub const SingleProducerSequencer = struct {
+const SingleClaimPolicy = struct {
     next: PaddedAtomicSeq,
     safe_to_write_through: usize align(std.atomic.cache_line),
     buffer_size: usize,
@@ -34,7 +126,7 @@ pub const SingleProducerSequencer = struct {
     }
 
     /// Returns the next unclaimed sequence, not necessarily the end of published events.
-    pub fn current(self: *Self) usize {
+    pub fn nextClaimSequence(self: *const Self) usize {
         return self.next.value.load(.acquire);
     }
 
@@ -56,7 +148,7 @@ pub const SingleProducerSequencer = struct {
 };
 
 /// Atomically assigns unique sequences and shares a cached capacity limit between producers.
-pub const MultiProducerSequencer = struct {
+const MultipleClaimPolicy = struct {
     next: PaddedAtomicSeq,
     safe_to_write_through: PaddedAtomicSeq,
     buffer_size: usize,
@@ -78,7 +170,7 @@ pub const MultiProducerSequencer = struct {
     }
 
     /// Returns the next unclaimed sequence; earlier claims may still be unpublished.
-    pub fn current(self: *Self) usize {
+    pub fn nextClaimSequence(self: *const Self) usize {
         return self.next.value.load(.acquire);
     }
 
