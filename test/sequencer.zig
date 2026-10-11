@@ -13,33 +13,23 @@ test "sequencer starts with unpublished slots and next-unread consumers at one" 
     inline for (.{ false, true }) |multi_producer| {
         for (0..20) |exp| {
             const capacity = std.math.pow(usize, 2, exp);
-            var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, capacity, 2);
+            var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, 2);
             defer coordinator.deinit();
 
-            try std.testing.expectEqual(capacity, coordinator.max_consumer_batch_size);
             try std.testing.expectEqual(1, coordinator.nextClaimSequence());
             try std.testing.expectEqual(capacity - 1, coordinator.mask);
             for (0..2) |consumer_id| {
                 try std.testing.expectEqual(1, coordinator.consumerSequence(consumer_id, .monotonic));
             }
             for (coordinator.buffer_seq) |*marker| try std.testing.expectEqual(0, marker.load(.acquire));
-            try std.testing.expectEqual(0, coordinator.publishedBatchSize(0, null));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(0, capacity, null));
             for (1..capacity + 3) |sequence| try std.testing.expectEqual(sequence, coordinator.claim());
             try std.testing.expectEqual(capacity + 3, coordinator.nextClaimSequence());
-            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, null));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, capacity, null));
         }
         for (0..1000) |capacity| {
             if (capacity > 0 and (capacity & (capacity - 1) == 0)) continue;
-            try std.testing.expectError(error.IncorrectBufferSize, Sequencer(multi_producer).init(std.testing.failing_allocator, capacity, 1, 2));
-        }
-    }
-}
-
-test "sequencer batch size must be nonzero and no larger than capacity" {
-    inline for (.{ false, true }) |multi_producer| {
-        for ([_]usize{ 1, 8 }) |capacity| {
-            try std.testing.expectError(error.IncorrectBatchSize, Sequencer(multi_producer).init(std.testing.failing_allocator, capacity, 0, 1));
-            try std.testing.expectError(error.IncorrectBatchSize, Sequencer(multi_producer).init(std.testing.failing_allocator, capacity, capacity + 1, 1));
+            try std.testing.expectError(error.IncorrectBufferSize, Sequencer(multi_producer).init(std.testing.failing_allocator, capacity, 2));
         }
     }
 }
@@ -48,7 +38,7 @@ test "sequencer frees coordination storage when allocation fails" {
     inline for (.{ false, true }) |multi_producer| {
         const Check = struct {
             fn initAndDeinit(allocator: std.mem.Allocator) !void {
-                var coordinator = try Sequencer(multi_producer).init(allocator, 8, 8, 2);
+                var coordinator = try Sequencer(multi_producer).init(allocator, 8, 2);
                 defer coordinator.deinit();
             }
         };
@@ -59,7 +49,7 @@ test "sequencer frees coordination storage when allocation fails" {
 test "write safety limit caches the slowest consumer's progress" {
     inline for (.{ false, true }) |multi_producer| {
         for ([_]usize{ 1, 8 }) |capacity| {
-            var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, capacity, 2);
+            var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, 2);
             defer coordinator.deinit();
 
             try std.testing.expectEqual(capacity, cachedLimit(multi_producer, &coordinator));
@@ -89,7 +79,7 @@ test "write safety limit handles no consumers and the sequence upper bound" {
     inline for (.{ false, true }) |multi_producer| {
         for ([_]usize{ 1, 8 }) |capacity| {
             for (0..2) |consumer_count| {
-                var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, capacity, consumer_count);
+                var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, consumer_count);
                 defer coordinator.deinit();
 
                 for (0..consumer_count) |consumer_id| coordinator.acknowledge(consumer_id, std.math.maxInt(usize));
@@ -97,7 +87,7 @@ test "write safety limit handles no consumers and the sequence upper bound" {
                 try std.testing.expectEqual(std.math.maxInt(usize), cachedLimit(multi_producer, &coordinator));
             }
         }
-        var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, 8, 8, 1);
+        var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, 8, 1);
         defer coordinator.deinit();
         coordinator.acknowledge(0, std.math.maxInt(usize) - 1);
         try std.testing.expect(coordinator.isSlotSafeToWrite(std.math.maxInt(usize)));
@@ -107,49 +97,50 @@ test "write safety limit handles no consumers and the sequence upper bound" {
 
 test "published batches stop at the first gap and require the exact sequence marker" {
     inline for (.{ false, true }) |multi_producer| {
-        var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, 8, 8, 1);
+        var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, 8, 1);
         defer coordinator.deinit();
 
         coordinator.publish(2);
         coordinator.publish(4);
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, null));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 8, null));
         coordinator.publish(1);
-        try std.testing.expectEqual(2, coordinator.publishedBatchSize(1, null));
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(3, null));
-        try std.testing.expectEqual(1, coordinator.publishedBatchSize(4, null));
+        try std.testing.expectEqual(2, coordinator.publishedBatchSize(1, 8, null));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(3, 8, null));
+        try std.testing.expectEqual(1, coordinator.publishedBatchSize(4, 8, null));
         coordinator.publish(3);
-        try std.testing.expectEqual(4, coordinator.publishedBatchSize(1, null));
+        try std.testing.expectEqual(4, coordinator.publishedBatchSize(1, 8, null));
 
         // Previous-lap markers cannot expose events for a newly reused slot.
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, null));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8, null));
         coordinator.publish(9);
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8));
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 9));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8, 8));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(9, 8, 9));
         coordinator.publish(11);
-        try std.testing.expectEqual(1, coordinator.publishedBatchSize(9, null));
+        try std.testing.expectEqual(1, coordinator.publishedBatchSize(9, 8, null));
         coordinator.publish(10);
-        try std.testing.expectEqual(3, coordinator.publishedBatchSize(9, null));
+        try std.testing.expectEqual(3, coordinator.publishedBatchSize(9, 8, null));
         // A newer marker must not be accepted for an older expected sequence either.
-        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, null));
+        try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 8, null));
     }
 }
 
 test "published batches honor size, physical boundaries and exclusive drain ends" {
     inline for (.{ false, true }) |multi_producer| {
         for ([_]usize{ 1, 8 }) |capacity| {
-            for (1..capacity + 1) |max_consumer_batch_size| {
-                var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, max_consumer_batch_size, 1);
-                defer coordinator.deinit();
-                for (1..capacity + 1) |sequence| coordinator.publish(sequence);
+            var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, 1);
+            defer coordinator.deinit();
+            for (1..capacity + 1) |sequence| coordinator.publish(sequence);
 
-                const contiguous = @min(max_consumer_batch_size, if (capacity == 1) 1 else capacity - 1);
-                try std.testing.expectEqual(max_consumer_batch_size, coordinator.max_consumer_batch_size);
-                try std.testing.expectEqual(contiguous, coordinator.publishedBatchSize(1, null));
-                try std.testing.expectEqual(1, coordinator.publishedBatchSize(capacity, null));
-                try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 0));
-                try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 1));
-                try std.testing.expectEqual(1, coordinator.publishedBatchSize(1, 2));
-                try std.testing.expectEqual(contiguous, coordinator.publishedBatchSize(1, capacity + 1));
+            const contiguous = if (capacity == 1) 1 else capacity - 1;
+            try std.testing.expectEqual(contiguous, coordinator.publishedBatchSize(1, capacity + 5, null));
+            try std.testing.expectEqual(1, coordinator.publishedBatchSize(capacity, capacity, null));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, 0, null));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, capacity, 0));
+            try std.testing.expectEqual(0, coordinator.publishedBatchSize(1, capacity, 1));
+            try std.testing.expectEqual(1, coordinator.publishedBatchSize(1, capacity, 2));
+            try std.testing.expectEqual(contiguous, coordinator.publishedBatchSize(1, capacity, capacity + 1));
+            for (0..capacity + 1) |max_count| {
+                try std.testing.expectEqual(@min(max_count, contiguous), coordinator.publishedBatchSize(1, max_count, null));
             }
         }
     }
@@ -170,7 +161,7 @@ test "concurrent multi-producer claims are unique and later publication cannot h
         }
     };
 
-    var coordinator = try Sequencer(true).init(std.testing.allocator, 256, 256, 1);
+    var coordinator = try Sequencer(true).init(std.testing.allocator, 256, 1);
     defer coordinator.deinit();
     const gap = coordinator.claim();
     var gate: Gate = .{};
@@ -201,10 +192,10 @@ test "concurrent multi-producer claims are unique and later publication cannot h
     }
     for (seen) |claimed| try std.testing.expect(claimed);
     try std.testing.expectEqual(count + 2, coordinator.nextClaimSequence());
-    try std.testing.expectEqual(0, coordinator.publishedBatchSize(gap, null));
-    try std.testing.expectEqual(count, coordinator.publishedBatchSize(gap + 1, null));
+    try std.testing.expectEqual(0, coordinator.publishedBatchSize(gap, count + 1, null));
+    try std.testing.expectEqual(count, coordinator.publishedBatchSize(gap + 1, count, null));
     coordinator.publish(gap);
-    try std.testing.expectEqual(count + 1, coordinator.publishedBatchSize(gap, coordinator.nextClaimSequence()));
+    try std.testing.expectEqual(count + 1, coordinator.publishedBatchSize(gap, count + 1, coordinator.nextClaimSequence()));
 }
 
 test "multi-producer capacity cache does not regress under concurrent checks" {
@@ -224,7 +215,7 @@ test "multi-producer capacity cache does not regress under concurrent checks" {
         }
     };
 
-    var coordinator = try Sequencer(true).init(std.testing.allocator, capacity, capacity, 1);
+    var coordinator = try Sequencer(true).init(std.testing.allocator, capacity, 1);
     defer coordinator.deinit();
     var gate: Gate = .{};
     var ready: Counter = .{};
