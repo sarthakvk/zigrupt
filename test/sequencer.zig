@@ -38,6 +38,11 @@ test "sequencer batch size must be nonzero and no larger than capacity" {
         for ([_]usize{ 1, 8 }) |capacity| {
             try std.testing.expectError(error.IncorrectBatchSize, Sequencer(multi_producer).init(std.testing.failing_allocator, capacity, 0, 1));
             try std.testing.expectError(error.IncorrectBatchSize, Sequencer(multi_producer).init(std.testing.failing_allocator, capacity, capacity + 1, 1));
+            for (1..capacity + 1) |max_batch| {
+                var coordinator = try Sequencer(multi_producer).init(std.testing.allocator, capacity, max_batch, 1);
+                defer coordinator.deinit();
+                try std.testing.expectEqual(max_batch, coordinator.max_consumer_batch_size);
+            }
         }
     }
 }

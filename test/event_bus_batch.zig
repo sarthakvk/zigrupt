@@ -106,20 +106,6 @@ fn finish(bus: anytype, gate: *Gate, draining: bool, next_sequence: usize) !void
     }
 }
 
-test "batch size must be nonzero and no larger than capacity" {
-    inline for (.{ false, true }) |multi_producer| {
-        for ([_]usize{ 1, capacity }) |buffer_size| {
-            try std.testing.expectError(error.IncorrectBatchSize, Bus(multi_producer).init(std.testing.allocator, buffer_size, 0));
-            try std.testing.expectError(error.IncorrectBatchSize, Bus(multi_producer).init(std.testing.allocator, buffer_size, buffer_size + 1));
-            for (1..buffer_size + 1) |max_batch| {
-                var bus = try Bus(multi_producer).init(std.testing.allocator, buffer_size, max_batch);
-                defer bus.deinit();
-                try std.testing.expectEqual(max_batch, bus.sequencer.max_consumer_batch_size);
-            }
-        }
-    }
-}
-
 test "running and draining batches respect size, wrap and the end of the queue" {
     // Batch limit, publication count, and expected callback lengths for one scenario.
     const Case = struct { max_batch: usize, events: usize, lengths: []const usize };
