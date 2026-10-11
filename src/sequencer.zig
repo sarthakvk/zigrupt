@@ -11,7 +11,7 @@ const PaddedAtomicSeq = struct {
 ///
 /// Sequences start at one and must not overflow. Consumers track their next unread sequence.
 pub fn Sequencer(comptime multi_producer: bool) type {
-    const ClaimPolicy = if (multi_producer) MultiProducerSequencer else SingleProducerSequencer;
+    const ClaimPolicy = if (multi_producer) MultipleClaimPolicy else SingleClaimPolicy;
 
     return struct {
         claim_policy: ClaimPolicy,
@@ -56,7 +56,7 @@ pub fn Sequencer(comptime multi_producer: bool) type {
 
         /// Returns claim progress, which may be ahead of contiguous publication progress.
         pub fn nextClaimSequence(self: *const Self) usize {
-            return self.claim_policy.current();
+            return self.claim_policy.nextClaimSequence();
         }
 
         /// Checks slot reuse against this sequencer's consumer counters.
@@ -104,7 +104,7 @@ pub fn Sequencer(comptime multi_producer: bool) type {
 }
 
 /// Assigns sequences for one producer, caching capacity until consumers must be checked again.
-const SingleProducerSequencer = struct {
+const SingleClaimPolicy = struct {
     next: PaddedAtomicSeq,
     safe_to_write_through: usize align(std.atomic.cache_line),
     buffer_size: usize,
@@ -130,7 +130,7 @@ const SingleProducerSequencer = struct {
     }
 
     /// Returns the next unclaimed sequence, not necessarily the end of published events.
-    pub fn current(self: *const Self) usize {
+    pub fn nextClaimSequence(self: *const Self) usize {
         return self.next.value.load(.acquire);
     }
 
@@ -152,7 +152,7 @@ const SingleProducerSequencer = struct {
 };
 
 /// Atomically assigns unique sequences and shares a cached capacity limit between producers.
-const MultiProducerSequencer = struct {
+const MultipleClaimPolicy = struct {
     next: PaddedAtomicSeq,
     safe_to_write_through: PaddedAtomicSeq,
     buffer_size: usize,
@@ -174,7 +174,7 @@ const MultiProducerSequencer = struct {
     }
 
     /// Returns the next unclaimed sequence; earlier claims may still be unpublished.
-    pub fn current(self: *const Self) usize {
+    pub fn nextClaimSequence(self: *const Self) usize {
         return self.next.value.load(.acquire);
     }
 
