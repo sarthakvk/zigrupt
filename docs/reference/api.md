@@ -1,6 +1,6 @@
 ---
 title: Public API
-description: Bus construction, methods, handler and waiting contracts, and errors.
+description: Event bus and storage methods, handler and waiting contracts, and errors.
 ---
 
 Import the module with `const zigrupt = @import("zigrupt");`. The public
@@ -98,6 +98,71 @@ is offered again after partial or zero consumption. The bus does not validate
 the returned count.
 See [batching](/guides/batching/) and [ownership](/guides/ownership/).
 
+## RingBuffer
+
+```zig
+zigrupt.RingBuffer(T: type) type
+```
+
+Creates fixed-capacity storage indexed by sequence. A sequence maps to
+`sequence & (buffer_size - 1)`, including sequence zero. Sequences one capacity
+apart refer to the same reusable slot, which holds only its current value.
+
+Callers must synchronize shared access, make writes visible before reading,
+and finish reading a slot before overwriting it. Storage access does not claim
+sequences, track publication, or enforce safe slot reuse. Only read slots
+initialized with `save`. Do not copy an initialized ring to create another owner.
+
+### init
+
+```zig
+Ring.init(allocator: std.mem.Allocator, buffer_size: usize) !Ring
+```
+
+Allocates uninitialized storage. `buffer_size` must be a nonzero power of two.
+Errors: `IncorrectBufferSize` and allocator errors.
+
+### get
+
+```zig
+ring.get(sequence: usize) *const T
+```
+
+Borrows the slot for `sequence`. The pointer refers to reusable storage and
+sees replacement values when the slot is safely overwritten.
+
+### save
+
+```zig
+ring.save(sequence: usize, event: T) void
+```
+
+Copies `event` into its slot. Pointers and slices within the event remain
+caller-owned. This operation does not wait for readers or publish the event.
+
+### slice
+
+```zig
+ring.slice(sequence: usize, max_len: usize) []const T
+```
+
+Borrows consecutive physical slots starting at the mapped index. Its length is
+`min(max_len, buffer_size - (sequence & (buffer_size - 1)))`, so it never crosses
+the physical ring boundary. A zero `max_len` returns an empty slice. It does not
+check whether slots have been initialized or published. Both `get` and `slice`
+accept a const receiver.
+
+### deinit
+
+```zig
+ring.deinit() void
+```
+
+Frees the ring allocation after all accesses have finished, invalidating all
+borrowed slot pointers and slices. It does not release resources referenced
+by event values. Keep the allocator valid through this call and do not use
+the ring afterward.
+
 ## waiting_strategy
 
 `zigrupt.waiting_strategy.BusySpin` is a type exposing `pub fn wait() void` which
@@ -109,11 +174,6 @@ compile error when the contract is not met. The function takes **zero**
 arguments, even if a compiler diagnostic mentions `self`.
 See [custom waiting strategies](/guides/waiting-strategies/).
 
-## hello
-
-`zigrupt.hello() void` prints `hello, from zigrupt lib!!!` followed by a newline
-using `std.debug.print`. Event-bus setup does not require it.
-
 ## Errors
 
 Match method errors using ordinary Zig error literals. `EventBusError` is not
@@ -121,19 +181,21 @@ exported from the root module.
 
 | Error | Meaning / operation |
 | --- | --- |
-| `IncorrectBufferSize` | `init`: zero or non-power-of-two capacity |
-| `IncorrectBatchSize` | `init`: zero batch size or larger than capacity |
+| `IncorrectBufferSize` | `EventBus.init`/`RingBuffer.init`: zero or non-power-of-two capacity |
+| `IncorrectBatchSize` | `EventBus.init`: zero batch size or larger than capacity |
 | `NotLifecycleOwner` | `start`/`stop`: caller is not the initializing thread; checked before state |
 | `BusIdle` | `produce`/`stop`: bus is idle |
 | `BusStarting` | `produce`/`start`: bus is starting |
 | `BusRunning` | `start`: bus already runs |
 | `BusDraining` | `produce`/`start`/`stop`: bus is draining |
-| Allocator errors | `init`, and possibly thread creation |
+| Allocator errors | `EventBus.init`, `RingBuffer.init`, and possibly thread creation |
 | Thread-spawn errors | `start`: propagated from Zig's thread implementation, platform dependent |
 
 ## State and implementation fields
 
 The lifecycle states are `idle`, `starting`, `running`, and `draining`.
-`EventBusState` is not a root export. Storage fields such as sequences, thread
-handles, and the state atomic are implementation details. Use the methods above
-for lifecycle transitions; modifying internal fields bypasses their contracts.
+`EventBusState` is not a root export. The bus's `buffer`, sequence counters,
+thread handles, and state atomic are implementation details. Direct access to
+bus storage bypasses publication and slot-reuse coordination; use `produce()`
+and handler callbacks for event delivery, and bus methods for lifecycle
+transitions.
