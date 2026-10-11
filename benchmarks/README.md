@@ -19,10 +19,10 @@ and creates a new directory under `benchmarks/results/` for each run.
 `--standalone` builds only Zigrupt and does not fetch the competitors. The suite
 covers `1p1c`, `2p1c`, `2p2c`, `4p1c`, `1p3c`, and `3p3c` by default.
 Pass `--case` followed by one or more of these names to run only those cases.
-Each performance case needs one physical core per producer and consumer, of one type on one
-socket; cases exceeding the available cores are skipped. `2p1c` needs three
-cores, `2p2c` needs four, and running every case needs six. Use `--check-only`
-for correctness checks, or `--smoke` for a short functional run.
+Each performance case needs one physical core per producer and consumer,
+of one type on one socket; cases exceeding the available cores are skipped.
+`2p1c` needs three cores, `2p2c` needs four, and running every case needs six.
+Use `--check-only` for correctness checks, or `--smoke` for a short functional run.
 The default is five independent repeats with a 3-second warmup and 2-second
 measurement target. An approximate runtime is shown before the run starts.
 Pass `--output results/name` to choose a directory within

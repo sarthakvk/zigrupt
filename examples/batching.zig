@@ -18,7 +18,13 @@ fn handle(events: []const usize) usize {
     }
     return consumed; // Acknowledge exactly the prefix processed above.
 }
-const Bus = zigrupt.EventBus(usize, false, &.{handle}, zigrupt.waiting_strategy.BusySpin, zigrupt.waiting_strategy.BusySpin);
+const Bus = zigrupt.EventBus(
+    usize,
+    false,
+    &.{handle},
+    zigrupt.waiting_strategy.BusySpin,
+    zigrupt.waiting_strategy.BusySpin,
+);
 
 pub fn main() !void {
     var bus = try Bus.init(std.heap.page_allocator, 16, 8);
@@ -28,5 +34,8 @@ pub fn main() !void {
     for (0..100) |value| try bus.produce(value);
     try bus.stop();
     if (next != 100 or !retried) return error.UnexpectedConsumption;
-    std.debug.print("batching: 100 events consumed in order after one retry\n", .{});
+    std.debug.print(
+        "batching: 100 events consumed in order after one retry\n",
+        .{},
+    );
 }

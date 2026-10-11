@@ -9,7 +9,13 @@ fn handle(events: []const Event) usize {
     return events.len;
 }
 
-const Bus = zigrupt.EventBus(Event, false, &.{handle}, zigrupt.waiting_strategy.BusySpin, zigrupt.waiting_strategy.BusySpin);
+const Bus = zigrupt.EventBus(
+    Event,
+    false,
+    &.{handle},
+    zigrupt.waiting_strategy.BusySpin,
+    zigrupt.waiting_strategy.BusySpin,
+);
 
 pub fn main() !void {
     var bus = try Bus.init(std.heap.page_allocator, 64, 8);

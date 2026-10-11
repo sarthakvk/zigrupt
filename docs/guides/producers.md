@@ -49,7 +49,13 @@ const Metrics = struct {
         return events.len;
     }
 };
-const Bus = zigrupt.EventBus(usize, false, &.{ Audit.handle, Metrics.handle }, zigrupt.waiting_strategy.BusySpin, zigrupt.waiting_strategy.BusySpin);
+const Bus = zigrupt.EventBus(
+    usize,
+    false,
+    &.{ Audit.handle, Metrics.handle },
+    zigrupt.waiting_strategy.BusySpin,
+    zigrupt.waiting_strategy.BusySpin,
+);
 
 pub fn main() !void {
     var bus = try Bus.init(std.heap.page_allocator, 8, 4);
@@ -88,12 +94,19 @@ var next: [producer_count]usize = @splat(0);
 fn handle(events: []const Event) usize {
     for (events) |event| {
         // Cross-producer interleaving is unspecified; each producer stays ordered.
-        if (event.offset != next[event.producer]) @panic("unexpected producer order");
+        if (event.offset != next[event.producer])
+            @panic("unexpected producer order");
         next[event.producer] += 1;
     }
     return events.len;
 }
-const Bus = zigrupt.EventBus(Event, true, &.{handle}, zigrupt.waiting_strategy.BusySpin, zigrupt.waiting_strategy.BusySpin);
+const Bus = zigrupt.EventBus(
+    Event,
+    true,
+    &.{handle},
+    zigrupt.waiting_strategy.BusySpin,
+    zigrupt.waiting_strategy.BusySpin,
+);
 
 const Publisher = struct {
     bus: *Bus,
@@ -102,7 +115,10 @@ const Publisher = struct {
 
     fn run(self: *Publisher) void {
         for (0..events_per_producer) |offset| {
-            self.bus.produce(.{ .producer = self.id, .offset = offset }) catch |err| {
+            self.bus.produce(.{
+                .producer = self.id,
+                .offset = offset,
+            }) catch |err| {
                 self.failure = err;
                 return;
             };

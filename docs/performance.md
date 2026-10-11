@@ -32,8 +32,8 @@ so the four-producer/one-consumer and
 three-producer/three-consumer workloads could not be measured. Each measured
 workload has three independent throughput repeats and three latency repeats
 at each offered rate. The
-[benchmark methodology](https://github.com/sarthakvk/zigrupt/blob/main/benchmarks/README.md) describes validation,
-warmup, and timing.
+[benchmark methodology](https://github.com/sarthakvk/zigrupt/blob/main/benchmarks/README.md)
+describes validation, warmup, and timing.
 
 ## Saturated throughput
 
