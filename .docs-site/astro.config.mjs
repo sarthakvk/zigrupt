@@ -49,7 +49,7 @@ export default defineConfig({
           label: "Contributing",
           items: [
             { slug: "contributing/workflow", label: "Contributor Workflow" },
-            { slug: "contributing/internals", label: "Implementation Tour" },
+            { slug: "contributing/internals", label: "Internals" },
           ],
         },
       ],

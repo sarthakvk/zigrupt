@@ -33,4 +33,5 @@ the archive as a hashed dependency, imports `zigrupt`, and builds/runs `basic.zi
 as its main program. It requires Python 3 and Zig, and uses no network.
 
 Documentation code blocks are generated from these files. After an example
-change, run `node docs/scripts/sync-snippets.mjs` and commit the refreshed Markdown.
+change, run `node .docs-site/scripts/sync-snippets.mjs` and commit the refreshed
+Markdown.

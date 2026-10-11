@@ -9,9 +9,12 @@ another thread does not transfer ownership; calls from that thread return
 
 ## Startup and failure cleanup
 
-`init()` allocates ring slots, publication markers, consumer progress, and thread
-handles. It returns an idle bus and frees partial allocations if initialization
-fails. Call `deinit()` exactly once on a successfully initialized bus.
+Initialization returns an idle bus and cleans up partial allocations on failure.
+Call `deinit()` exactly once on a successfully initialized bus.
+
+Register at least one handler before starting. With an empty handler list,
+`start()` returns `error.NoHandlersRegistered` and leaves the bus idle; it cannot
+be used as a running bus that discards events.
 
 `start()` creates the handler threads and returns with the bus running. Publish
 only after it returns successfully. If thread creation fails, `start()` stops and
@@ -43,6 +46,9 @@ Consumer and producer progress is preserved, so acknowledged events are not
 replayed. Handler threads are recreated. Retain or reset application state only
 after the old threads have joined. To change type-level configuration, define a
 new bus type; to change runtime capacity, initialize a new bus.
+
+Restart does not reset sequence counters. Ring slots wrap, but the `usize`
+sequences must not overflow; initialize a fresh bus before exhausting them.
 
 `start()` and `stop()` are not idempotent. Starting a running bus returns
 `BusRunning`; stopping an idle bus returns `BusIdle`.

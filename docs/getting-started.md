@@ -3,7 +3,7 @@ title: Getting started
 description: Add zigrupt to a Zig project and run a small example.
 ---
 
-### Add the dependency
+## Add the dependency
 
 In a new project, run:
 
@@ -18,11 +18,14 @@ In `build.zig`, add these lines after the `exe` declaration so `main.zig` can
 import zigrupt:
 
 ```zig
-const zigrupt = b.dependency("zigrupt", .{ .target = target, .optimize = optimize });
+const zigrupt = b.dependency("zigrupt", .{
+    .target = target,
+    .optimize = optimize,
+});
 exe.root_module.addImport("zigrupt", zigrupt.module("zigrupt"));
 ```
 
-### Try it
+## Try it
 
 Replace `src/main.zig` with:
 
@@ -56,6 +59,23 @@ zig build run
 ```
 
 This prints `42`.
+
+## Choose capacity and batch size
+
+In `Bus.init(allocator, 64, 8)`, `64` is the ring capacity and `8` is the
+maximum number of events offered to a handler in one callback. Capacity must
+be a nonzero power of two, and the batch limit must be between one and capacity
+inclusive.
+
+A larger ring absorbs longer bursts but uses more storage; it does not remove
+[slow-handler backpressure](/concepts/#backpressure). The batch limit controls
+how much work a handler receives at once, not how long the bus waits to collect
+it. See [batching](/guides/batching/) for acknowledgement and retry rules.
+
+The event type, producer mode, handlers, and waiting strategies are fixed when
+defining `Bus`; capacity and batch size are chosen when initializing each
+instance. The example uses one producer and one handler. See
+[producer modes](/guides/producers/) before publishing concurrently.
 
 Continue with [concepts](/concepts/) and
 [event ownership](/guides/ownership/) before passing pointers or slices.

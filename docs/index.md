@@ -43,7 +43,9 @@ and process events in batches to match the workload and available CPU time.
 
 - [Install and run your first program](/getting-started/).
 - [Understand broadcast and backpressure](/concepts/).
-- [Choose producer mode](/guides/producers/).
+- [Choose capacity and batch size](/getting-started/#choose-capacity-and-batch-size).
+- [Publish from one or multiple producers](/guides/producers/).
+- [Manage startup and shutdown](/guides/lifecycle/).
 - [See the measured performance comparison](/performance/).
 - [Run the canonical examples](https://github.com/sarthakvk/zigrupt/tree/main/examples).
 
