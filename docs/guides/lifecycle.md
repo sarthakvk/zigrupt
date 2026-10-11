@@ -45,5 +45,4 @@ after the old threads have joined. To change type-level configuration, define a
 new bus type; to change runtime capacity, initialize a new bus.
 
 `start()` and `stop()` are not idempotent. Starting a running bus returns
-`BusRunning`; stopping an idle bus returns `BusIdle`. See the complete
-[error reference](/reference/api/#errors).
+`BusRunning`; stopping an idle bus returns `BusIdle`.

@@ -3,7 +3,7 @@ title: Implementation tour
 description: Source map and sequence mechanics for contributors.
 ---
 
-For application code, use the [public API](/reference/api/) and
+For application code, use the [getting started guide](/getting-started/) and
 [usage contracts](/concepts/).
 
 ## Source map
@@ -72,5 +72,5 @@ threads, clears thread handles, and returns to `idle`; it does not reset the
 sequences. Partial startup failure uses the stop path for cleanup.
 
 When changing these paths, keep source comments, examples, and the
-[public API reference](/reference/api/) consistent with the resulting
+[usage contracts](/concepts/) consistent with the resulting
 behavior.

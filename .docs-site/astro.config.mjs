@@ -44,13 +44,6 @@ export default defineConfig({
             { slug: "guides/lifecycle", label: "Lifecycle" },
           ],
         },
-        {
-          label: "Reference",
-          items: [
-            { slug: "reference/api", label: "Public API" },
-            { slug: "reference/configuration", label: "Configuration" },
-          ],
-        },
         { slug: "performance", label: "Performance" },
         {
           label: "Contributing",
