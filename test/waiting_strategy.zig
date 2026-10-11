@@ -1,4 +1,7 @@
 //! Waiting-strategy contract checks for the built-in spin strategy and a custom implementation.
+//!
+//! Validation is compile-time; direct calls check that valid strategies are callable.
+//! These are contract checks, not measurements of scheduling or waiting performance.
 
 const std = @import("std");
 const waiting_strategy = @import("zigrupt").waiting_strategy;
@@ -19,6 +22,7 @@ test "a custom zero-argument wait function satisfies the contract" {
         }
     };
 
+    // No instance or bus-specific state is required: the strategy exposes fn () void.
     comptime waiting_strategy.validateWaitingStrategy(CountingStrategy);
     CountingStrategy.wait();
     try std.testing.expectEqual(@as(usize, 1), CountingStrategy.calls);

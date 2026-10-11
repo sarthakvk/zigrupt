@@ -1,4 +1,8 @@
 //! Single-producer broadcast, wraparound, backpressure, draining, and restart tests.
+//!
+//! Event values start at zero, while publication sequences and next-unread cursors start
+//! at one: value `n` occupies sequence `n + 1`. The test thread owns bus lifecycle;
+//! producer threads are joined before stop, and recorder output is read after stop.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;
@@ -12,6 +16,7 @@ const releaseWhenDraining = @import("support/utils.zig").releaseWhenDraining;
 test "single producer tests" {
     const allocator = std.testing.allocator;
 
+    // Separate recorder IDs make this a broadcast check, not a shared delivery count.
     const recorders = [_]type{ Recorder(2, event_count), Recorder(3, event_count), Recorder(4, event_count), Recorder(5, event_count) };
     const handlers: [4]EventHandler(usize) = .{
         recorders[0].handle,
@@ -36,6 +41,7 @@ test "single producer tests" {
 
     try std.testing.expect(bus.state.load(.acquire) == .running);
 
+    // Ten events exceed the eight-slot ring; every handler must see the full stream.
     for (0..10) |i| {
         try bus.produce(i);
     }
@@ -63,12 +69,16 @@ const Bus = EventBus(
 );
 
 /// Publishes `len` consecutive values from `start`, waiting for slot reuse outside the bus.
+///
+/// Values must match sequence minus one, including after restart. This helper keeps
+/// order and drain scenarios separate from the bus's own full-buffer waiting path.
 fn publish(bus: *Bus, start: usize, len: usize) void {
     for (start..start + len) |value| {
-        // Keep the order/wrap test from exercising backpressure: wait for every
-        // handler to finish with the slot. The full-buffer test bypasses this helper.
+        // The full-buffer test bypasses this helper to exercise the bus's own wait.
         if (value >= capacity) {
             for (concurrent_handlers, 0..) |_, consumer_id| {
+                // The previous occupant is sequence value + 1 - capacity. A next-unread
+                // cursor must be strictly past it before the producer can overwrite it.
                 while (bus.sequencer.consumerSequence(consumer_id, .acquire) <= value + 1 - capacity) {
                     std.Thread.yield() catch {};
                 }
@@ -126,6 +136,8 @@ test "publisher waits for a full buffer until handlers advance" {
     entered.waitFor(concurrent_handlers.len);
     attempting.wait();
 
+    // `attempting` marks intent before produce(), not arrival in its capacity wait.
+    // The handler gate nevertheless keeps the ring full throughout this snapshot.
     const completed_while_full = completed.get();
     gate.open();
     producer.join();
@@ -154,14 +166,16 @@ test "stop drains queued events from paused handlers and restart preserves seque
     producer.join();
     entered.waitFor(concurrent_handlers.len);
 
+    // Producers have finished, but neither handler has acknowledged its first event.
+    // Release only after stop enters draining so queued delivery exercises that phase.
     const releaser = try std.Thread.spawn(.{}, releaseWhenDraining, .{ &bus, &gate });
     try bus.stop();
     releaser.join();
     try First.expectRange(0, capacity);
     try Second.expectRange(0, capacity);
 
-    // After stopping, the next production must reuse slots without replaying
-    // events from the previous run.
+    // Keep both recordings and sequence progress across restart: the final range
+    // catches replay as well as loss. Disable the one-time pause for the second run.
     First.entered = null;
     Second.entered = null;
     try bus.start();

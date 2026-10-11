@@ -1,4 +1,10 @@
 //! Batch sizing, wrap boundaries, partial consumption, and publication-gap tests in both bus phases.
+//!
+//! Event values equal publication sequences, starting at one. With eight slots, sequences
+//! 1..7 are physically contiguous and sequence 8 wraps to index zero.
+//!
+//! Hold each handler's first callback until the queue is fully arranged, then retry it
+//! in either running or draining. This makes expected batch shapes independent of scheduling.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;
@@ -13,10 +19,15 @@ const capacity = 8;
 
 /// Creates an isolated recorder for `id` with configurable partial consumption and one-time pausing.
 ///
-/// Configure before starting handlers and inspect recorded batches only after joining them.
+/// Distinct IDs keep each handler's observations independent. Configure before starting
+/// handlers and inspect recorded batches only after joining them.
+///
+/// The first paused call is synchronization only and is excluded from the recording.
+/// `lengths` and `first_values` describe offered batches; `values` stores only consumed events.
 fn BatchRecorder(comptime id: usize) type {
     return struct {
         var unique_id = id;
+        // Setup is test-owned before start; progress and recordings are handler-owned until stop.
         var gate: *Gate = undefined;
         var entered: *Counter = undefined;
         var paused: bool = false;
@@ -92,6 +103,10 @@ fn Bus(comptime multi_producer: bool) type {
 /// Releases handlers during draining, or waits for `next_sequence` while running, then stops the bus.
 ///
 /// Propagates release-thread spawn and bus-stop errors.
+///
+/// In the running case, wait for every next-unread cursor to reach the target before
+/// stopping, so the expected callbacks cannot be deferred to draining. In the draining
+/// case, keep handlers held until stop changes state. No producer calls may be in flight.
 fn finish(bus: anytype, gate: *Gate, draining: bool, next_sequence: usize) !void {
     if (draining) {
         const releaser = try std.Thread.spawn(.{}, releaseWhenDraining, .{ bus, gate });
@@ -122,6 +137,8 @@ test "batch size must be nonzero and no larger than capacity" {
 
 test "running and draining batches respect size, wrap and the end of the queue" {
     // Batch limit, publication count, and expected callback lengths for one scenario.
+    // Starting at index one leaves seven contiguous slots: eight queued events split
+    // at the ring boundary even when max_batch permits all eight in a single call.
     const Case = struct { max_batch: usize, events: usize, lengths: []const usize };
     const cases = [_]Case{
         .{ .max_batch = 1, .events = 8, .lengths = &.{ 1, 1, 1, 1, 1, 1, 1, 1 } },
@@ -146,6 +163,8 @@ test "running and draining batches respect size, wrap and the end of the queue" 
                     gate.open();
                     bus.stop() catch {};
                 }
+                // Neither callback acknowledges the first event while gated, so the
+                // remaining publications cannot be consumed before the queue is complete.
                 try bus.produce(1);
                 entered.waitFor(handlers.len);
                 for (2..case.events + 1) |value| try bus.produce(value);
@@ -188,6 +207,10 @@ test "partial and zero consumption retry the unconsumed suffix independently per
                 for (start + 1..start + capacity) |value| try bus.produce(value);
                 try finish(&bus, &gate, draining, start + capacity);
 
+                // First consumes whole offers: 5 + 2 up to the boundary, then 1 after wrap.
+                // Second first consumes zero, then at most two: its offered lengths are
+                // 5 (zero), 5, 5, 3, 1 before wrap, and 1 after wrap. Only acknowledged
+                // prefixes advance its cursor; the other handler's progress is independent.
                 try First.expectBatches(&.{ 5, 2, 1 });
                 try Second.expectBatches(&.{ 5, 5, 5, 3, 1, 1 });
                 const expected_first = [_]usize{ start, start, start + 2, start + 4, start + 6, start + 7 };
@@ -203,6 +226,7 @@ test "partial and zero consumption retry the unconsumed suffix independently per
 }
 
 test "running and draining callbacks borrow ring storage across wraps and restarts" {
+    // Handler-owned observations are inspected only after finish joins its thread.
     const BorrowedBatch = struct {
         var ring: *const RingBuffer(usize) = undefined;
         var gate: *Gate = undefined;
@@ -214,12 +238,15 @@ test "running and draining callbacks borrow ring storage across wraps and restar
 
         /// Checks storage identity; test event values are their publication sequences.
         fn handle(events: []const usize) usize {
+            // Equal values alone could come from a copy; equal addresses establish
+            // that the callback borrows the slot for this exact publication sequence.
             borrowed = borrowed and &events[0] == ring.get(events[0]);
             calls += 1;
             if (!paused) {
                 paused = true;
                 entered.increment();
                 gate.wait();
+                // Keep the first event unread so its retry checks borrowing in the chosen phase.
                 return 0;
             }
             count += events.len;
@@ -256,6 +283,7 @@ test "running and draining callbacks borrow ring storage across wraps and restar
                 try finish(&bus, &gate, draining, start + capacity);
 
                 try std.testing.expect(BorrowedBatch.borrowed);
+                // One paused call plus the seven-slot prefix and the one-slot wrapped tail.
                 try std.testing.expectEqual(3, BorrowedBatch.calls);
                 try std.testing.expectEqual(capacity, BorrowedBatch.count);
             }
@@ -269,6 +297,8 @@ test "running and draining batches stop at unpublished or stale claims before la
             var bus = try Bus(true).init(std.testing.allocator, capacity, capacity);
             defer bus.deinit();
             for (0..capacity) |sequence| bus.buffer.save(sequence, std.math.maxInt(usize));
+            // Warm up a complete lap when testing stale markers. Otherwise untouched
+            // slots contain zero; both cases must hide later publications behind the gap.
             if (stale) {
                 var gate: Gate = .{};
                 var entered: Counter = .{};
@@ -303,6 +333,8 @@ test "running and draining batches stop at unpublished or stale claims before la
             const gap = bus.sequencer.claim();
             try std.testing.expectEqual(start + 2, gap);
             for (gap + 1..gap + 4) |value| try bus.produce(value);
+            // On the second lap the missing sequence is 11, whose slot still names 3.
+            // A nonzero marker is insufficient: it must match the expected sequence.
             try std.testing.expectEqual(if (stale) @as(usize, 3) else 0, bus.sequencer.buffer_seq[gap & bus.sequencer.mask].load(.acquire));
             try finish(&bus, &gate, draining, gap);
 
@@ -313,6 +345,7 @@ test "running and draining batches stop at unpublished or stale claims before la
             for (handlers, 0..) |_, consumer_id| {
                 try std.testing.expectEqual(gap, bus.sequencer.consumerSequence(consumer_id, .acquire));
             }
+            // Claims extend past the gap, but consumption and draining must stop at it.
             try std.testing.expectEqual(gap + 4, bus.sequencer.nextClaimSequence());
         }
     }

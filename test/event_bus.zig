@@ -1,4 +1,7 @@
 //! Initialization and lifecycle ownership checks for both producer modes.
+//!
+//! These tests isolate configuration and lifecycle errors from event delivery. The test
+//! thread initializes each bus and owns start/stop; worker threads only attempt forbidden calls.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;
@@ -6,6 +9,7 @@ const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Recorder = @import("support/utils.zig").Recorder;
 
+// Lifecycle tests need a registered handler but never publish an accepted event.
 const handlers = [_]EventHandler(usize){Recorder(0, 1).handle};
 
 test "EventBus init" {
@@ -22,6 +26,7 @@ test "EventBus init" {
 
         try std.testing.expectEqual(1, bus.max_batch_size);
         try std.testing.expectEqual(1024, bus.buffer.slice(0, 1024).len);
+        // A failing allocator distinguishes validation from an attempted allocation.
         for ([_]usize{ 0, 3, 120 }) |buffer_size| {
             try std.testing.expectError(error.IncorrectBufferSize, Bus.init(std.testing.failing_allocator, buffer_size, 1));
         }
@@ -31,6 +36,7 @@ test "EventBus init" {
 test "EventBus init releases ring storage when later allocations fail" {
     inline for (.{ false, true }) |multi_producer| {
         const Check = struct {
+            /// Exercises successful teardown and each injected allocation-failure path.
             fn initAndDeinit(allocator: std.mem.Allocator) !void {
                 const Bus = EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
                 var bus = try Bus.init(allocator, 8, 1);
@@ -49,6 +55,8 @@ test "start rejects a bus with no registered handlers and leaves it idle" {
             defer bus.deinit();
             defer bus.stop() catch {};
 
+            // Repeating the attempt checks that rejection leaves the bus reusable and
+            // that a rejected publication never reserves a sequence.
             for (0..2) |_| {
                 try std.testing.expectError(error.NoHandlersRegistered, bus.start());
                 try std.testing.expectEqual(.idle, bus.state.load(.acquire));
@@ -103,6 +111,8 @@ test "start and stop require lifecycle owner" {
             }
         };
 
+        // Ownership rejection must apply both to starting an idle bus and to stopping
+        // a running one. Joining transfers the worker's non-atomic result back to us.
         var result: ?anyerror = null;
         var thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, true });
         thread.join();
