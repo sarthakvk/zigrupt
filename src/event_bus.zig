@@ -66,7 +66,6 @@ pub fn EventBus(
 
     return struct {
         buffer: RingBuffer(T),
-        max_batch_size: usize,
         state: atomic.Value(EventBusState),
 
         sequencer: Sequencer,
@@ -79,20 +78,20 @@ pub fn EventBus(
         ///
         /// `buffer_size` must be a nonzero power of two (`IncorrectBufferSize` otherwise).
         ///
-        /// `max_batch_size` caps callback slices and must be between one and `buffer_size`
+        /// `max_consumer_batch_size` caps callback slices and must be between one and `buffer_size`
         /// inclusive (`IncorrectBatchSize` otherwise).
         ///
         /// Allocation failures are propagated.
-        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, max_batch_size: usize) !Self {
+        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, max_consumer_batch_size: usize) !Self {
             // buffer_size must be a power of 2
             if (buffer_size == 0 or buffer_size & (buffer_size - 1) != 0) return EventBusError.IncorrectBufferSize;
 
-            if (max_batch_size == 0 or max_batch_size > buffer_size) return EventBusError.IncorrectBatchSize;
+            if (max_consumer_batch_size == 0 or max_consumer_batch_size > buffer_size) return EventBusError.IncorrectBatchSize;
 
             var buffer = try RingBuffer(T).init(allocator, buffer_size);
             errdefer buffer.deinit();
 
-            var sequence_coordinator = try Sequencer.init(allocator, buffer_size, event_handlers.len);
+            var sequence_coordinator = try Sequencer.init(allocator, buffer_size, max_consumer_batch_size, event_handlers.len);
             errdefer sequence_coordinator.deinit();
 
             const threads = try allocator.alloc(?std.Thread, event_handlers.len);
@@ -101,7 +100,6 @@ pub fn EventBus(
 
             return .{
                 .buffer = buffer,
-                .max_batch_size = max_batch_size,
                 .state = .init(.idle),
                 .sequencer = sequence_coordinator,
                 .threads = threads,
@@ -208,7 +206,7 @@ pub fn EventBus(
             while (state == .starting) : (state = self.state.load(.monotonic)) ConsumerWaitingStrategy.wait();
 
             while (state == .running) : (state = self.state.load(.monotonic)) {
-                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size, null);
+                const batch_size = self.sequencer.publishedBatchSize(c_seq, null);
                 if (batch_size == 0) {
                     ConsumerWaitingStrategy.wait();
                     continue;
@@ -227,7 +225,7 @@ pub fn EventBus(
             const cursor = self.sequencer.nextClaimSequence();
 
             while (c_seq < cursor) {
-                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size, cursor);
+                const batch_size = self.sequencer.publishedBatchSize(c_seq, cursor);
                 if (batch_size == 0) break;
 
                 const events_slice = self.buffer.slice(c_seq, batch_size);

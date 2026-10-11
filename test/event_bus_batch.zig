@@ -114,7 +114,7 @@ test "batch size must be nonzero and no larger than capacity" {
             for (1..buffer_size + 1) |max_batch| {
                 var bus = try Bus(multi_producer).init(std.testing.allocator, buffer_size, max_batch);
                 defer bus.deinit();
-                try std.testing.expectEqual(max_batch, bus.max_batch_size);
+                try std.testing.expectEqual(max_batch, bus.sequencer.max_consumer_batch_size);
             }
         }
     }

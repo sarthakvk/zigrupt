@@ -20,7 +20,7 @@ test "EventBus init" {
         var bus = try Bus.init(std.testing.allocator, 1024, 1);
         defer bus.deinit();
 
-        try std.testing.expectEqual(1, bus.max_batch_size);
+        try std.testing.expectEqual(1, bus.sequencer.max_consumer_batch_size);
         try std.testing.expectEqual(1024, bus.buffer.slice(0, 1024).len);
         for ([_]usize{ 0, 3, 120 }) |buffer_size| {
             try std.testing.expectError(error.IncorrectBufferSize, Bus.init(std.testing.failing_allocator, buffer_size, 1));

@@ -18,13 +18,17 @@ pub fn Sequencer(comptime multi_producer: bool) type {
         buffer_seq: []std.atomic.Value(usize),
         consumer_seq: []PaddedAtomicSeq,
         mask: usize,
+        max_consumer_batch_size: usize,
         allocator: std.mem.Allocator,
 
         const Self = @This();
 
         /// Allocates unpublished slot markers and consumer counters starting at one.
-        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, consumer_count: usize) !Self {
+        ///
+        /// `max_consumer_batch_size` must be between one and `buffer_size` inclusive.
+        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, max_consumer_batch_size: usize, consumer_count: usize) !Self {
             if (buffer_size == 0 or buffer_size & (buffer_size - 1) != 0) return error.IncorrectBufferSize;
+            if (max_consumer_batch_size == 0 or max_consumer_batch_size > buffer_size) return error.IncorrectBatchSize;
 
             const buffer_seq = try allocator.alloc(std.atomic.Value(usize), buffer_size);
             errdefer allocator.free(buffer_seq);
@@ -39,6 +43,7 @@ pub fn Sequencer(comptime multi_producer: bool) type {
                 .buffer_seq = buffer_seq,
                 .consumer_seq = consumer_seq,
                 .mask = buffer_size - 1,
+                .max_consumer_batch_size = max_consumer_batch_size,
                 .allocator = allocator,
             };
         }
@@ -71,11 +76,11 @@ pub fn Sequencer(comptime multi_producer: bool) type {
 
         /// Acquire-checks a contiguous published prefix without crossing the physical ring boundary.
         ///
-        /// Stops at any missing or stale marker, `max_count`, or the optional exclusive end.
-        pub fn publishedBatchSize(self: *const Self, first: usize, max_count: usize, end_exclusive: ?usize) usize {
+        /// Stops at any missing or stale marker, `max_consumer_batch_size`, or the optional exclusive end.
+        pub fn publishedBatchSize(self: *const Self, first: usize, end_exclusive: ?usize) usize {
             if (first == 0) return 0;
             const index = first & self.mask;
-            var limit = @min(max_count, self.buffer_seq.len - index);
+            var limit = @min(self.max_consumer_batch_size, self.buffer_seq.len - index);
             if (end_exclusive) |end| {
                 if (end <= first) return 0;
                 limit = @min(limit, end - first);
