@@ -26,6 +26,10 @@ const Bus = EventBus(
 );
 
 /// Producer thread group with a shared start gate and thread-safe completion tracking.
+///
+/// Each instance is used for one launch and must stay at a stable address through join.
+/// The owner writes launch state before opening the gate; workers increment `completed`
+/// only after their final produce call returns.
 const Producers = struct {
     threads: [producer_count]std.Thread = undefined,
     thread_count: usize = 0,
@@ -154,8 +158,9 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
         second_gate.open();
         producers.join();
     }
-    // Wait for actual claims, not just a signal sent before calling produce.
-    // Sequences start at 1, and the cursor points to the next unclaimed sequence.
+    // Wait for actual claims, not just intent to publish. The cursor starts at one
+    // and names the next unclaimed sequence, so this target proves every producer
+    // reserved its extra sequence while both handlers still hold the first lap.
     while (bus.sequencer.nextClaimSequence() < capacity + producer_count + 1) std.Thread.yield() catch {};
     const completed_while_full = producers.completed.get();
 
@@ -177,6 +182,12 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
 }
 
 /// Waiting strategy that holds one claimed sequence while another producer publishes past it.
+///
+/// Only threads with `paused` set block. Entering this wait proves that produce() has
+/// already claimed a sequence and found its slot unsafe; releasing consumers alone
+/// cannot resume that publisher until `released` also opens.
+///
+/// Reset the shared gates between tests, with no publisher threads active.
 const PausedPublisher = struct {
     threadlocal var paused: bool = false;
     var entered: Gate = .{};
@@ -232,6 +243,8 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
     var earlier_publication: usize = undefined;
     var later_publication: usize = undefined;
     {
+        // The full ring forces the earlier producer into the custom wait after it
+        // claims sequence capacity + 1, making the publication gap deterministic.
         const earlier = try std.Thread.spawn(.{}, PausedPublisher.publish, .{ &bus, capacity, true });
         defer earlier.join();
         defer {
@@ -250,6 +263,8 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
             while (bus.sequencer.consumerSequence(consumer_id, .acquire) < capacity + 1) std.Thread.yield() catch {};
             sequence.* = bus.sequencer.consumerSequence(consumer_id, .acquire);
         }
+        // Snapshot before releasing the earlier publisher: its slot still carries a
+        // stale marker while the later slot is published. Cursors must stop at the gap.
         earlier_publication = bus.sequencer.buffer_seq[(capacity + 1) & bus.sequencer.mask].load(.acquire);
         later_publication = bus.sequencer.buffer_seq[(capacity + 2) & bus.sequencer.mask].load(.acquire);
     }
@@ -286,6 +301,8 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     producers.join();
     entered.waitFor(concurrent_handlers.len);
 
+    // All producers are joined and the ring is full. Holding the first callbacks
+    // until draining begins ensures stop, rather than normal running, delivers the queue.
     const releaser = try std.Thread.spawn(.{}, releaseWhenDraining, .{ &bus, &gate });
     try bus.stop();
     releaser.join();
@@ -293,6 +310,7 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     try std.testing.expectEqual(capacity + 1, bus.sequencer.nextClaimSequence());
 
     // Keep the recorded events and sequences to detect replays after restart.
+    // Resume each producer's offsets instead of beginning a new value range.
     First.entered = null;
     Second.entered = null;
     try bus.start();

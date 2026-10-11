@@ -19,6 +19,7 @@ test "a custom zero-argument wait function satisfies the contract" {
         }
     };
 
+    // No instance or bus-specific state is required: the strategy exposes fn () void.
     comptime waiting_strategy.validateWaitingStrategy(CountingStrategy);
     CountingStrategy.wait();
     try std.testing.expectEqual(@as(usize, 1), CountingStrategy.calls);

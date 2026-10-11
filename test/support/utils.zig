@@ -1,4 +1,4 @@
-//! Event recording and drain synchronization shared by ring-buffer tests.
+//! Event recording and drain synchronization shared by event-bus tests.
 
 const std = @import("std");
 const Gate = @import("synchronization.zig").Gate;
@@ -6,11 +6,16 @@ const Counter = @import("synchronization.zig").Counter;
 
 /// Creates an isolated single-event recorder for `id`, storing up to `event_count` values.
 ///
+/// Distinct IDs give handlers separate recording state even when their capacities match.
 /// Only its handler writes recorded values; reset before starting and inspect after joining.
+///
+/// Setting `entered` and `gate` holds the first callback before it acknowledges anything,
+/// keeping that handler's next-unread sequence at one on a fresh bus.
 pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
     return struct {
         pub var values: [event_count]usize = undefined;
         pub var count: usize = 0;
+        // Optional first-event pause; both controls are configured before the handler starts.
         pub var gate: ?*Gate = null;
         pub var entered: ?*Counter = null;
         var unique_id = id;
@@ -57,7 +62,11 @@ pub fn Recorder(comptime id: usize, comptime event_count: usize) type {
 
 /// Opens the handlers' gate only after draining begins, forcing queued events through `stop()`.
 ///
-/// Run on a separate thread while the lifecycle owner stops the bus.
+/// Run on a separate thread while the lifecycle owner stops the bus. Calling this on
+/// the owner would prevent `stop()` from ever setting the state it waits for.
+///
+/// Producers must already be finished, and at least one handler must still be held by
+/// the gate so the bus cannot finish draining before this thread observes the state.
 pub fn releaseWhenDraining(bus: anytype, gate: *Gate) void {
     while (bus.state.load(.acquire) != .draining) std.Thread.yield() catch {};
     gate.open();
