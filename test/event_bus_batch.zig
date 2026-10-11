@@ -1,8 +1,9 @@
 //! Batch sizing, wrap boundaries, partial consumption, and publication-gap tests in both bus phases.
 
 const std = @import("std");
-const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
+const RingBuffer = @import("zigrupt").RingBuffer;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
 const Counter = @import("support/synchronization.zig").Counter;
@@ -85,7 +86,7 @@ const handlers = [_]EventHandler(usize){ First.handle, Second.handle };
 
 /// Creates a bus type for the chosen producer mode with both batch recorders attached.
 fn Bus(comptime multi_producer: bool) type {
-    return RingBufferEventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+    return EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
 }
 
 /// Releases handlers during draining, or waits for `next_sequence` while running, then stops the bus.
@@ -135,7 +136,7 @@ test "running and draining batches respect size, wrap and the end of the queue" 
                 var bus = try Bus(multi_producer).init(std.testing.allocator, capacity, case.max_batch);
                 defer bus.deinit();
                 // A bad batch should report extra deliveries, not read undefined data.
-                @memset(bus.buffer, std.math.maxInt(usize));
+                for (0..capacity) |sequence| bus.buffer.save(sequence, std.math.maxInt(usize));
                 var gate: Gate = .{};
                 var entered: Counter = .{};
                 First.reset(&gate, &entered);
@@ -201,12 +202,73 @@ test "partial and zero consumption retry the unconsumed suffix independently per
     }
 }
 
+test "running and draining callbacks borrow ring storage across wraps and restarts" {
+    const BorrowedBatch = struct {
+        var ring: *const RingBuffer(usize) = undefined;
+        var gate: *Gate = undefined;
+        var entered: *Counter = undefined;
+        var paused: bool = false;
+        var borrowed: bool = true;
+        var calls: usize = 0;
+        var count: usize = 0;
+
+        /// Checks storage identity; test event values are their publication sequences.
+        fn handle(events: []const usize) usize {
+            borrowed = borrowed and &events[0] == ring.get(events[0]);
+            calls += 1;
+            if (!paused) {
+                paused = true;
+                entered.increment();
+                gate.wait();
+                return 0;
+            }
+            count += events.len;
+            return events.len;
+        }
+    };
+    const borrowed_handlers = [_]EventHandler(usize){BorrowedBatch.handle};
+
+    inline for (.{ false, true }) |multi_producer| {
+        for ([_]bool{ false, true }) |draining| {
+            const BorrowedBus = EventBus(usize, multi_producer, &borrowed_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            var bus = try BorrowedBus.init(std.testing.allocator, capacity, capacity);
+            defer bus.deinit();
+            BorrowedBatch.ring = &bus.buffer;
+
+            for (0..2) |lap| {
+                var gate: Gate = .{};
+                var entered: Counter = .{};
+                BorrowedBatch.gate = &gate;
+                BorrowedBatch.entered = &entered;
+                BorrowedBatch.paused = false;
+                BorrowedBatch.borrowed = true;
+                BorrowedBatch.calls = 0;
+                BorrowedBatch.count = 0;
+                const start = lap * capacity + 1;
+                try bus.start();
+                defer {
+                    gate.open();
+                    bus.stop() catch {};
+                }
+                try bus.produce(start);
+                entered.waitFor(1);
+                for (start + 1..start + capacity) |value| try bus.produce(value);
+                try finish(&bus, &gate, draining, start + capacity);
+
+                try std.testing.expect(BorrowedBatch.borrowed);
+                try std.testing.expectEqual(3, BorrowedBatch.calls);
+                try std.testing.expectEqual(capacity, BorrowedBatch.count);
+            }
+        }
+    }
+}
+
 test "running and draining batches stop at unpublished or stale claims before later publications" {
     for ([_]bool{ false, true }) |draining| {
         for ([_]bool{ false, true }) |stale| {
             var bus = try Bus(true).init(std.testing.allocator, capacity, capacity);
             defer bus.deinit();
-            @memset(bus.buffer, std.math.maxInt(usize));
+            for (0..capacity) |sequence| bus.buffer.save(sequence, std.math.maxInt(usize));
             if (stale) {
                 var gate: Gate = .{};
                 var entered: Counter = .{};

@@ -1,7 +1,7 @@
 //! Concurrent-producer ordering, backpressure, publication gaps, draining, and restart tests.
 
 const std = @import("std");
-const RingBufferEventBus = @import("zigrupt").EventBus;
+const EventBus = @import("zigrupt").EventBus;
 const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Gate = @import("support/synchronization.zig").Gate;
@@ -17,7 +17,7 @@ const event_count = producer_count * events_per_producer;
 const First = Recorder(0, event_count);
 const Second = Recorder(1, event_count);
 const concurrent_handlers = [_]EventHandler(usize){ First.handle, Second.handle };
-const Bus = RingBufferEventBus(
+const Bus = EventBus(
     usize,
     true,
     &concurrent_handlers,
@@ -198,7 +198,7 @@ const PausedPublisher = struct {
     }
 };
 
-const GapBus = RingBufferEventBus(
+const GapBus = EventBus(
     usize,
     true,
     &concurrent_handlers,

@@ -1,0 +1,165 @@
+//! Initialization, lifecycle ownership, and cached write-safety checks for both producer modes.
+
+const std = @import("std");
+const EventBus = @import("zigrupt").EventBus;
+const EventHandler = @import("zigrupt").EventHandler;
+const waiting_strategy = @import("zigrupt").waiting_strategy;
+const Recorder = @import("support/utils.zig").Recorder;
+
+const handlers = [_]EventHandler(usize){Recorder(0, 1).handle};
+
+test "EventBus init" {
+    inline for (.{ false, true }) |multi_producer| {
+        const Bus = EventBus(
+            usize,
+            multi_producer,
+            &handlers,
+            waiting_strategy.BusySpin,
+            waiting_strategy.BusySpin,
+        );
+        var bus = try Bus.init(std.testing.allocator, 1024, 1);
+        defer bus.deinit();
+
+        try std.testing.expectEqual(1, bus.max_batch_size);
+        try std.testing.expectEqual(1024, bus.buffer.slice(0, 1024).len);
+        for ([_]usize{ 0, 3, 120 }) |buffer_size| {
+            try std.testing.expectError(error.IncorrectBufferSize, Bus.init(std.testing.failing_allocator, buffer_size, 1));
+        }
+    }
+}
+
+test "EventBus init releases ring storage when later allocations fail" {
+    inline for (.{ false, true }) |multi_producer| {
+        const Check = struct {
+            fn initAndDeinit(allocator: std.mem.Allocator) !void {
+                const Bus = EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+                var bus = try Bus.init(allocator, 8, 1);
+                defer bus.deinit();
+            }
+        };
+        try std.testing.checkAllAllocationFailures(std.testing.allocator, Check.initAndDeinit, .{});
+    }
+}
+
+test "DuplicateStart" {
+    inline for (.{ false, true }) |multi_producer| {
+        const Bus = EventBus(
+            usize,
+            multi_producer,
+            &handlers,
+            waiting_strategy.BusySpin,
+            waiting_strategy.BusySpin,
+        );
+        var bus = try Bus.init(std.testing.allocator, 1024, 1);
+        defer bus.deinit();
+
+        try bus.start();
+        defer bus.stop() catch {};
+
+        try std.testing.expectError(error.BusRunning, bus.start());
+    }
+}
+
+test "start and stop require lifecycle owner" {
+    inline for (.{ false, true }) |multi_producer| {
+        const Bus = EventBus(
+            usize,
+            multi_producer,
+            &handlers,
+            waiting_strategy.BusySpin,
+            waiting_strategy.BusySpin,
+        );
+        var bus = try Bus.init(std.testing.allocator, 1024, 1);
+        defer bus.deinit();
+
+        // Worker for attempting lifecycle operations outside the initializing thread.
+        const worker = struct {
+            /// Attempts start or stop and records any error.
+            ///
+            /// Read `result` after joining.
+            fn run(eb: *Bus, result: *?anyerror, start_bus: bool) void {
+                const operation = if (start_bus) eb.start() else eb.stop();
+                operation catch |err| {
+                    result.* = err;
+                };
+            }
+        };
+
+        var result: ?anyerror = null;
+        var thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, true });
+        thread.join();
+        try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
+
+        try bus.start();
+        defer bus.stop() catch {};
+
+        result = null;
+        thread = try std.Thread.spawn(.{}, worker.run, .{ &bus, &result, false });
+        thread.join();
+        try std.testing.expectEqual(@as(?anyerror, error.NotLifecycleOwner), result);
+    }
+}
+
+test "write safety limit caches the slowest consumer's progress" {
+    const handler = struct {
+        /// Acknowledges the entire batch.
+        ///
+        /// These tests advance consumer counters directly.
+        fn handle(events: []const usize) usize {
+            return events.len;
+        }
+    }.handle;
+    const test_handlers = [_]EventHandler(usize){ handler, handler };
+
+    inline for (.{ false, true }) |multi_producer| {
+        for ([_]usize{ 1, 8 }) |capacity| {
+            const Bus = EventBus(usize, multi_producer, &test_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            var bus = try Bus.init(std.testing.allocator, capacity, 1);
+            defer bus.deinit();
+
+            try std.testing.expectEqual(capacity, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity, bus.consumer_seq));
+            try std.testing.expect(!bus.sequencer.isSlotSafeToWrite(capacity + 1, bus.consumer_seq));
+
+            bus.consumer_seq[0].value.store(5, .release);
+            try std.testing.expect(!bus.sequencer.isSlotSafeToWrite(capacity + 1, bus.consumer_seq));
+
+            bus.consumer_seq[1].value.store(3, .release);
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity + 1, bus.consumer_seq));
+            try std.testing.expectEqual(capacity + 2, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
+
+            bus.consumer_seq[1].value.store(7, .release);
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity + 2, bus.consumer_seq));
+            // A cache hit must not refresh the limit even when consumers advanced.
+            try std.testing.expectEqual(capacity + 2, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
+
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(capacity + 4, bus.consumer_seq));
+            try std.testing.expectEqual(capacity + 4, if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
+            try std.testing.expect(!bus.sequencer.isSlotSafeToWrite(capacity + 5, bus.consumer_seq));
+        }
+    }
+}
+
+test "write safety limit handles no consumers and the sequence upper bound" {
+    const handler = struct {
+        /// Acknowledges the entire batch.
+        ///
+        /// These tests advance consumer counters directly.
+        fn handle(events: []const usize) usize {
+            return events.len;
+        }
+    }.handle;
+    const test_handlers = [_]EventHandler(usize){handler};
+
+    inline for (.{ false, true }) |multi_producer| {
+        inline for (.{ test_handlers[0..0], test_handlers[0..] }) |event_handlers| {
+            const Bus = EventBus(usize, multi_producer, event_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            var bus = try Bus.init(std.testing.allocator, 8, 1);
+            defer bus.deinit();
+
+            for (bus.consumer_seq) |*consumer| consumer.value.store(std.math.maxInt(usize) - 1, .release);
+            try std.testing.expect(bus.sequencer.isSlotSafeToWrite(std.math.maxInt(usize), bus.consumer_seq));
+            try std.testing.expectEqual(std.math.maxInt(usize), if (multi_producer) bus.sequencer.safe_to_write_through.value.load(.acquire) else bus.sequencer.safe_to_write_through);
+        }
+    }
+}

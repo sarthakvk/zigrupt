@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Read `current_task.md` if it exists for ongoing planning and cross-session context; it is a local scratch-pad and must not be committed.
+
 ## Toolchain and verification
 
 - Use Zig **0.16.0**; `devbox shell` supplies it, but verify `zig version`. `devbox run test` is a failing placeholder; run Zig commands directly. Node is only needed for the documentation site.
@@ -15,7 +17,7 @@
 - `zig build test` runs module tests and every top-level `test/*.zig` file as separate executables. There is no build-level test filter. Focus one file/test with:
 
   ```sh
-  zig test --dep zigrupt -Mroot=test/ring_buffer_batch.zig -Mzigrupt=src/root.zig --test-filter "batch size"
+  zig test --dep zigrupt -Mroot=test/event_bus_batch.zig -Mzigrupt=src/root.zig --test-filter "batch size"
   ```
 
   Omit `--test-filter` to run the whole file. Run the full suite before submitting library changes.
@@ -24,7 +26,7 @@
 
 ## Concurrency context
 
-- `src/root.zig` is the public API. `src/ring_buffer.zig` owns publication, handler threads and lifecycle; `src/sequencer.zig` owns claims and slot reuse. Claim progress is **not** publication progress: multi-producer claims can complete out of order, so consumption/draining must check contiguous per-slot publication.
+- `src/root.zig` is the public API. `src/event_bus.zig` owns publication, handler threads and lifecycle; `src/sequencer.zig` owns claims and slot reuse. Claim progress is **not** publication progress: multi-producer claims can complete out of order, so consumption/draining must check contiguous per-slot publication.
 - Consumer counters identify the **next unread** sequence, starting at one; slot reuse is gated by the slowest handler. Preserve/document acquire/release ordering and producer/consumer ownership when changing atomics.
 - Keep a running bus at a stable address. `start()`/`stop()` belong to the initializing thread; finish all producer calls before `stop()`, then `deinit()`. Handlers acknowledge a consumed prefix; zero retries and can block shutdown. Callback slices are borrowed, and pointers inside copied events remain caller-owned.
 - For ring-buffer changes, cover single/multi-producer agreement, wraparound, backpressure and lifecycle. Reuse `test/support/synchronization.zig` gates/counters for thread coordination without timing assumptions.
