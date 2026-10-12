@@ -42,16 +42,10 @@ export default defineConfig({
             { slug: "guides/batching", label: "Batching & Acknowledgements" },
             { slug: "guides/waiting-strategies", label: "Waiting Strategies" },
             { slug: "guides/lifecycle", label: "Lifecycle" },
+            { slug: "guides/internals", label: "Internals" },
           ],
         },
         { slug: "performance", label: "Performance" },
-        {
-          label: "Contributing",
-          items: [
-            { slug: "contributing/workflow", label: "Contributor Workflow" },
-            { slug: "contributing/internals", label: "Internals" },
-          ],
-        },
       ],
     }),
   ],

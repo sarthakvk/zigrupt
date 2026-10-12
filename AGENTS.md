@@ -66,7 +66,7 @@ context; it is a local scratch-pad and must not be committed.
   applicable guides and handwritten `docs/reference/api.md` updated.
 - Site checks: `npm --prefix .docs-site ci`, then
   `npm --prefix .docs-site run check` (stale snippets, production build,
-  links/assets). Preview with `npm --prefix .docs-site run dev`; search requires
+  API docs). Preview with `npm --prefix .docs-site run dev`; search requires
   the production build and `npm --prefix .docs-site run preview`. See
   `CONTRIBUTING.md` for publishing/version archives.
 - Read `benchmarks/README.md` before benchmark work. On Linux,

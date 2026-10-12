@@ -50,6 +50,7 @@ and process events in batches to match the workload and available CPU time.
 - [Choose capacity and batch size](/getting-started/#choose-capacity-and-batch-size).
 - [Publish from one or multiple producers](/guides/producers/).
 - [Manage startup and shutdown](/guides/lifecycle/).
+- [API docs](/apidocs/).
 - [See the measured performance comparison](/performance/).
 - [Run the canonical examples](https://github.com/sarthakvk/zigrupt/tree/main/examples).
 

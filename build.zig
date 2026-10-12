@@ -1,8 +1,8 @@
-//! Build configuration for the library module, usage examples, and tests.
+//! Build configuration for the library module, API docs, usage examples, and tests.
 
 const std = @import("std");
 
-/// Registers the library, example, and test steps for the selected target and optimization mode.
+/// Registers the library, docs, example, and test steps for the selected target and optimization mode.
 ///
 /// The test step runs module tests and each top-level `test/*.zig` file as a separate executable.
 pub fn build(b: *std.Build) void {
@@ -14,6 +14,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .target = target,
     });
+
+    const docs = b.addLibrary(.{
+        .name = "zigrupt",
+        .root_module = zigrupt,
+        .linkage = .static,
+    });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    b.step("docs", "Generate API docs in zig-out/docs").dependOn(&install_docs.step);
 
     const examples_step = b.step("examples", "Compile all usage examples");
     const check_examples = b.step("check-examples", "Run all usage examples and verify their results");

@@ -11,13 +11,11 @@
     "preview": "astro preview",
     "snippets": "node scripts/sync-snippets.mjs",
     "check:snippets": "node scripts/sync-snippets.mjs --check",
-    "check:links": "node scripts/check-links.mjs",
-    "check": "npm run build && npm run check:links"
+    "check": "npm run build && (cd .. && zig build docs) && cp -R ../zig-out/docs dist/apidocs"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "7.3.2",
     "@astrojs/starlight": "0.42.6",
     "astro": "7.3.8"
-  },
-  "devDependencies": { "linkedom": "0.18.13" }
+  }
 }

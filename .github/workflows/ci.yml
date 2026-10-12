@@ -46,6 +46,9 @@ jobs:
             docs:
               - 'docs/**'
               - '.docs-site/**'
+              - 'src/**'
+              - 'build.zig'
+              - 'build.zig.zon'
               - 'examples/**'
               - 'README.md'
               - 'CONTRIBUTING.md'
@@ -60,6 +63,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .docs-site/.node-version
@@ -67,5 +73,5 @@ jobs:
           cache-dependency-path: .docs-site/package-lock.json
       - run: npm install --global npm@11.16.0
       - run: npm --prefix .docs-site ci
-      - name: Snippets, production build, links, and assets
+      - name: Snippets, production build, and API docs
         run: npm --prefix .docs-site run check

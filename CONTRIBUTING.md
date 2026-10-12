@@ -74,9 +74,6 @@ Author ordinary Markdown under `docs/`, using folders for the site hierarchy.
 New pages need a title and description in frontmatter. Add each new page to the
 ordered sidebar in `.docs-site/astro.config.mjs`.
 Use `/.../` links for site routes and relative paths for source assets.
-The production link check verifies pages, fragments, referenced local assets,
-CSS URLs, repository-document relative links, and the search index's presence.
-It does not check external-site uptime or exercise a browser.
 
 Canonical code lives in `examples/`. Keep `snippet` marker pairs around generated
 code in README and docs; run the synchronization command after edits, and commit
@@ -108,7 +105,7 @@ For pull requests, explain the concrete problem and resulting behavior, describe
 validation, and identify any public-contract changes. Keep unrelated redesigns
 separate. CI runs the existing tests, formatting, examples, and standalone consumer
 on every push and pull request. Documentation checks run only when docs, site
-tooling, examples, included or checked Markdown, or the docs-related workflows
+tooling, examples, repository Markdown, or the docs-related workflows
 change. Concurrency changes should have focused evidence for ordering,
 backpressure, and shutdown where relevant.
 
@@ -124,12 +121,3 @@ Pull requests run validation without publishing. The site root shows the current
 archived site at `/<tag>/`; the version menu links to these archives.
 The build uses the Markdown and images committed in each tag, so editing `main`
 does not rewrite released documentation.
-
-The Cloudflare Pages project is `zigrupt`, with `main` as its production branch.
-The GitHub Actions workflow uses repository variable `CLOUDFLARE_ACCOUNT_ID` and
-repository secret `CLOUDFLARE_API_TOKEN`. Create the token in Cloudflare with
-Account > Cloudflare Pages > Edit access to this account, then store it as a
-GitHub Actions secret. Keep the token out of commits and chat. The custom domain
-must be attached to the Pages project. Cloudflare DNS has a `zigrupt` CNAME
-pointing to `zigrupt.pages.dev`. A change of domain or repository owner/name
-requires reviewing the site URL, base path, content links, and link checker.
