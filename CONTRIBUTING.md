@@ -121,12 +121,3 @@ Pull requests run validation without publishing. The site root shows the current
 archived site at `/<tag>/`; the version menu links to these archives.
 The build uses the Markdown and images committed in each tag, so editing `main`
 does not rewrite released documentation.
-
-The Cloudflare Pages project is `zigrupt`, with `main` as its production branch.
-The GitHub Actions workflow uses repository variable `CLOUDFLARE_ACCOUNT_ID` and
-repository secret `CLOUDFLARE_API_TOKEN`. Create the token in Cloudflare with
-Account > Cloudflare Pages > Edit access to this account, then store it as a
-GitHub Actions secret. Keep the token out of commits and chat. The custom domain
-must be attached to the Pages project. Cloudflare DNS has a `zigrupt` CNAME
-pointing to `zigrupt.pages.dev`. A change of domain or repository owner/name
-requires reviewing the site URL, base path, and content links.
