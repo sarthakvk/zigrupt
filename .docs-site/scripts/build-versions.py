@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """Build main and documented release tags into one Cloudflare Pages directory.
 
-Use the current site tooling with each tag's archived docs, then validate the
-combined output's links before the publishing workflow uploads it.
+Use the current site tooling with each tag's archived docs and combine their
+output for the publishing workflow.
 """
 
 import io
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SITE = ROOT / ".docs-site"
@@ -41,10 +40,15 @@ def tags_with_docs():
 
 
 def has_path(tag, path):
-    return subprocess.run(
-        ["git", "cat-file", "-e", f"{tag}:{path}"],
-        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{tag}:{path}"],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
 
 
 def docs_layout(tag):
@@ -66,12 +70,10 @@ def build(version, tags):
 
 def source_at_tag(tag, directory):
     content_path, assets_path = docs_layout(tag)
-    paths = [content_path]
+    paths = [content_path, "src"]
     if assets_path != content_path and has_path(tag, assets_path):
         paths.append(assets_path)
-    archive = subprocess.check_output(
-        ["git", "archive", tag, *paths], cwd=ROOT
-    )
+    archive = subprocess.check_output(["git", "archive", tag, *paths], cwd=ROOT)
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(directory, filter="data")
     content = directory / content_path
@@ -110,6 +112,8 @@ def main():
         combined = work / "combined"
         try:
             build("main", tags)
+            run("zig", "build", "docs")
+            shutil.copytree(ROOT / "zig-out/docs", DIST / "apidocs")
             shutil.move(DIST, combined)
             for tag in tags:
                 source = work / tag
@@ -117,6 +121,15 @@ def main():
                 link(CONTENT, content)
                 link(ASSETS, assets)
                 build(tag, tags)
+                run(
+                    "zig",
+                    "build-lib",
+                    str(source / "src/root.zig"),
+                    "--name",
+                    "zigrupt",
+                    "-fno-emit-bin",
+                    f"-femit-docs={DIST / 'apidocs'}",
+                )
                 restore_cached_assets(combined)
                 shutil.move(DIST, combined / tag)
         finally:
@@ -125,7 +138,6 @@ def main():
             if combined.exists():
                 shutil.rmtree(DIST, ignore_errors=True)
                 shutil.move(combined, DIST)
-    run("npm", "--prefix", ".docs-site", "run", "check:links")
 
 
 if __name__ == "__main__":

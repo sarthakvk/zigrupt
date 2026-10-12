@@ -8,6 +8,9 @@ on:
     paths:
       - 'docs/**'
       - '.docs-site/**'
+      - 'src/**'
+      - 'build.zig'
+      - 'build.zig.zon'
       - 'examples/**'
       - 'README.md'
       - 'CONTRIBUTING.md'
@@ -33,6 +36,9 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .docs-site/.node-version

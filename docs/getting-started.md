@@ -79,3 +79,4 @@ instance. The example uses one producer and one handler. See
 
 Continue with [concepts](/concepts/) and
 [event ownership](/guides/ownership/) before passing pointers or slices.
+[API docs](/apidocs/).

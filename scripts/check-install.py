@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Verify a packaged dependency in an isolated consumer, without network access."""
 
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
+from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 manifest = (root / "build.zig.zon").read_text()
@@ -23,7 +23,9 @@ with tempfile.TemporaryDirectory(prefix="zigrupt-install-") as directory:
     with tarfile.open(archive, "w:gz") as package:
         for name in re.findall(r'"([^"]+)"', paths[1]):
             if name in {"docs", "", "."}:
-                raise SystemExit("Documentation dependencies must stay outside the Zig package")
+                raise SystemExit(
+                    "Documentation dependencies must stay outside the Zig package"
+                )
             package.add(root / name, arcname=f"zigrupt/{name}")
 
     def run(*args):
