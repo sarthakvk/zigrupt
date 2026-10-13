@@ -45,8 +45,12 @@ pub fn build(b: *std.Build) void {
         b.step("example-" ++ name, "Run the " ++ name ++ " example").dependOn(&run.step);
     }
 
+    const module_tests = b.addTest(.{ .root_module = zigrupt });
+    const check_step = b.step("check", "Compile all tests without running them");
+    check_step.dependOn(&module_tests.step);
+
     const test_step = b.step("test", "Run all tests");
-    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = zigrupt })).step);
+    test_step.dependOn(&b.addRunArtifact(module_tests).step);
 
     var test_dir = b.build_root.handle.openDir(b.graph.io, "test", .{ .iterate = true }) catch @panic("cannot open test directory");
     defer test_dir.close(b.graph.io);
@@ -60,6 +64,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
         }) });
         tests.root_module.addImport("zigrupt", zigrupt);
+        check_step.dependOn(&tests.step);
         test_step.dependOn(&b.addRunArtifact(tests).step);
     }
 }
