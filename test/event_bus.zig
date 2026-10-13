@@ -83,6 +83,27 @@ test "DuplicateStart" {
     }
 }
 
+test "stopped bus rejects restart, publication and repeated stop without changing sequences" {
+    inline for (.{ false, true }) |multi_producer| {
+        const Bus = EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+        var bus = try Bus.init(std.testing.allocator, 8, 1);
+        defer bus.deinit();
+        try bus.start();
+        defer bus.stop() catch {};
+        try bus.stop();
+
+        try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
+        for (0..2) |_| {
+            try std.testing.expectError(error.BusStopped, bus.start());
+            try std.testing.expectError(error.BusStopped, bus.produce(1));
+            try std.testing.expectError(error.BusStopped, bus.stop());
+            try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
+            try std.testing.expectEqual(1, bus.sequencer.nextClaimSequence());
+            try std.testing.expectEqual(1, bus.sequencer.consumerSequence(0, .acquire));
+        }
+    }
+}
+
 test "start and stop require lifecycle owner" {
     inline for (.{ false, true }) |multi_producer| {
         const Bus = EventBus(

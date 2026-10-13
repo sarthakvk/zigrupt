@@ -1,4 +1,4 @@
-//! Single-producer broadcast, wraparound, backpressure, draining, and restart tests.
+//! Single-producer broadcast, wraparound, backpressure, draining, and terminal-state tests.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;
@@ -45,7 +45,7 @@ test "single producer tests" {
     try std.testing.expect(bus.state.load(.acquire) == .running);
     try bus.stop();
 
-    try std.testing.expect(bus.state.load(.acquire) == .idle);
+    try std.testing.expect(bus.state.load(.acquire) == .stopped);
 
     inline for (recorders) |recorder| try recorder.expectRange(0, 10);
 }
@@ -66,7 +66,7 @@ const Bus = EventBus(
 
 /// Publishes `len` consecutive values from `start`, waiting for slot reuse outside the bus.
 ///
-/// Values must match sequence minus one, including after restart. This helper keeps
+/// Values must match sequence minus one. This helper keeps
 /// order and drain scenarios separate from the bus's own full-buffer waiting path.
 fn publish(bus: *Bus, start: usize, len: usize) void {
     for (start..start + len) |value| {
@@ -144,7 +144,7 @@ test "publisher waits for a full buffer until handlers advance" {
     try Second.expectRange(0, capacity + 1);
 }
 
-test "stop drains queued events from paused handlers and restart preserves sequences" {
+test "stop drains queued events from paused handlers and preserves final sequences" {
     First.reset();
     Second.reset();
     var gate: Gate = .{};
@@ -170,14 +170,9 @@ test "stop drains queued events from paused handlers and restart preserves seque
     try First.expectRange(0, capacity);
     try Second.expectRange(0, capacity);
 
-    // Keep both recordings and sequence progress across restart: the final range
-    // catches replay as well as loss. Disable the one-time pause for the second run.
-    First.entered = null;
-    Second.entered = null;
-    try bus.start();
-    const next_producer = try std.Thread.spawn(.{}, publish, .{ &bus, capacity, capacity });
-    next_producer.join();
-    try bus.stop();
-    try First.expectRange(0, 2 * capacity);
-    try Second.expectRange(0, 2 * capacity);
+    try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
+    try std.testing.expectEqual(capacity + 1, bus.sequencer.nextClaimSequence());
+    for (concurrent_handlers, 0..) |_, consumer_id| {
+        try std.testing.expectEqual(capacity + 1, bus.sequencer.consumerSequence(consumer_id, .acquire));
+    }
 }

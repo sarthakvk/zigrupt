@@ -1,4 +1,4 @@
-//! Concurrent-producer ordering, backpressure, publication gaps, draining, and restart tests.
+//! Concurrent-producer ordering, backpressure, publication gaps, draining, and terminal-state tests.
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;
@@ -117,7 +117,7 @@ test "MultiProducer concurrent producers deliver exactly once across wraps" {
 
         try std.testing.expectEqual(.running, bus.state.load(.acquire));
         try bus.stop();
-        try std.testing.expectEqual(.idle, bus.state.load(.acquire));
+        try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
         try std.testing.expectEqual(event_count + 1, bus.sequencer.nextClaimSequence());
         try expectProduced(0, events_per_producer);
     }
@@ -277,7 +277,7 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
     try Second.expectRange(0, capacity + 2);
 }
 
-test "MultiProducer stop drains all producers and restart preserves sequences" {
+test "MultiProducer stop drains all producers and preserves final sequences" {
     First.reset();
     Second.reset();
     var gate: Gate = .{};
@@ -309,15 +309,8 @@ test "MultiProducer stop drains all producers and restart preserves sequences" {
     try expectProduced(0, batch_per_producer);
     try std.testing.expectEqual(capacity + 1, bus.sequencer.nextClaimSequence());
 
-    // Keep the recorded events and sequences to detect replays after restart.
-    // Resume each producer's offsets instead of beginning a new value range.
-    First.entered = null;
-    Second.entered = null;
-    try bus.start();
-    var next_producers: Producers = .{};
-    try next_producers.start(&bus, batch_per_producer, batch_per_producer);
-    next_producers.join();
-    try bus.stop();
-    try std.testing.expectEqual(2 * capacity + 1, bus.sequencer.nextClaimSequence());
-    try expectProduced(0, 2 * batch_per_producer);
+    try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
+    for (concurrent_handlers, 0..) |_, consumer_id| {
+        try std.testing.expectEqual(capacity + 1, bus.sequencer.consumerSequence(consumer_id, .acquire));
+    }
 }

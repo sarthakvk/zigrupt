@@ -22,6 +22,7 @@ pub const EventBusError = error{
     BusStarting,
     BusRunning,
     BusDraining,
+    BusStopped,
     NotLifecycleOwner,
 };
 
@@ -35,6 +36,8 @@ pub const EventBusState = enum(u8) {
     running,
     /// New publications are rejected while consumers finish queued events.
     draining,
+    /// final state of the bus, No consumer threads are active; the bus can not be started.
+    stopped,
 };
 
 /// Creates a bus type that broadcasts each `T` event to every handler in claim order.
@@ -132,6 +135,7 @@ pub fn EventBus(
                 .draining => return EventBusError.BusDraining,
                 .running => return EventBusError.BusRunning,
                 .starting => return EventBusError.BusStarting,
+                .stopped => return EventBusError.BusStopped,
                 .idle => {},
             }
 
@@ -173,17 +177,19 @@ pub fn EventBus(
             switch (state) {
                 .draining => return EventBusError.BusDraining,
                 .idle => return EventBusError.BusIdle,
+                .stopped => return EventBusError.BusStopped,
                 .running => {},
                 .starting => {},
             }
 
             self.state.store(.draining, .monotonic);
 
-            for (self.threads) |th_| if (th_) |th| th.join();
-            @memset(self.threads, null);
+            for (self.threads) |th_op| {
+                if (th_op) |th| th.join();
+            }
 
             // Invariant: After stop exits, the bus will be in idle state.
-            self.state.store(.idle, .release);
+            self.state.store(.stopped, .release);
         }
 
         fn handleEvent(self: *Self, handler_id: usize) void {
@@ -207,6 +213,7 @@ pub fn EventBus(
                 .draining => return EventBusError.BusDraining,
                 .starting => return EventBusError.BusStarting,
                 .idle => return EventBusError.BusIdle,
+                .stopped => return EventBusError.BusStopped,
                 .running => {},
             }
 

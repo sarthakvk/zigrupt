@@ -13,15 +13,16 @@ const capacity = 8;
 
 /// Creates an isolated recorder for `id` with configurable partial consumption and one-time pausing.
 ///
-/// Distinct IDs keep each handler's observations independent. Configure before starting
-/// handlers and inspect recorded batches only after joining them.
+/// Distinct IDs keep each handler's observations independent. Configure and inspect
+/// only before startup, after acquiring acknowledgement of every queued event with
+/// no new publications, or after joining handlers.
 ///
 /// The first paused call is synchronization only and is excluded from the recording.
 /// `lengths` and `first_values` describe offered batches; `values` stores only consumed events.
 fn BatchRecorder(comptime id: usize) type {
     return struct {
         var unique_id = id;
-        // Setup is test-owned before start; progress and recordings are handler-owned until stop.
+        // Acquiring acknowledgement of all queued events permits setup changes before the next publication.
         var gate: *Gate = undefined;
         var entered: *Counter = undefined;
         var paused: bool = false;
@@ -35,7 +36,7 @@ fn BatchRecorder(comptime id: usize) type {
 
         /// Clears recording state and installs first-call synchronization.
         ///
-        /// No handler may be active.
+        /// No callback may be active or new events published until reset completes.
         fn reset(release: *Gate, ready: *Counter) void {
             gate = release;
             entered = ready;
@@ -89,9 +90,17 @@ const First = BatchRecorder(0);
 const Second = BatchRecorder(1);
 const handlers = [_]EventHandler(usize){ First.handle, Second.handle };
 
-/// Creates a bus type for the chosen producer mode with both batch recorders attached.
+/// Creates a bus type for the chosen producer mode.
 fn Bus(comptime multi_producer: bool) type {
     return EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+}
+
+/// Releases handlers and waits for every next-unread cursor while keeping the bus running.
+fn consume(bus: anytype, gate: *Gate, next_sequence: usize) !void {
+    gate.open();
+    for (0..bus.sequencer.consumer_seq.len) |consumer_id| {
+        while (bus.sequencer.consumerSequence(consumer_id, .acquire) < next_sequence) std.Thread.yield() catch {};
+    }
 }
 
 /// Releases handlers during draining, or waits for `next_sequence` while running, then stops the bus.
@@ -107,10 +116,7 @@ fn finish(bus: anytype, gate: *Gate, draining: bool, next_sequence: usize) !void
         defer releaser.join();
         try bus.stop();
     } else {
-        gate.open();
-        for (0..bus.sequencer.consumer_seq.len) |consumer_id| {
-            while (bus.sequencer.consumerSequence(consumer_id, .acquire) < next_sequence) std.Thread.yield() catch {};
-        }
+        try consume(bus, gate, next_sequence);
         try bus.stop();
     }
 }
@@ -181,25 +187,29 @@ test "partial and zero consumption retry the unconsumed suffix independently per
         for ([_]bool{ false, true }) |draining| {
             var bus = try Bus(multi_producer).init(std.testing.allocator, capacity, 5);
             defer bus.deinit();
-            // Repeat on the same bus to check that restart preserves progress and
-            // batches do not include publications left over from the previous lap.
+            // Keep the bus running across laps so reused slots cannot replay old publications.
+            var gates: [2]Gate = .{ .{}, .{} };
+            var entered: [2]Counter = .{ .{}, .{} };
+            defer {
+                for (&gates) |*gate| gate.open();
+                bus.stop() catch {};
+            }
             for (0..2) |lap| {
-                var gate: Gate = .{};
-                var entered: Counter = .{};
-                First.reset(&gate, &entered);
-                Second.reset(&gate, &entered);
+                const gate = &gates[lap];
+                First.reset(gate, &entered[lap]);
+                Second.reset(gate, &entered[lap]);
                 Second.consume_limit = 2;
                 Second.return_zero_once = true;
                 const start = lap * capacity + 1;
-                try bus.start();
-                defer {
-                    gate.open();
-                    bus.stop() catch {};
-                }
+                if (lap == 0) try bus.start();
                 try bus.produce(start);
-                entered.waitFor(handlers.len);
+                entered[lap].waitFor(handlers.len);
                 for (start + 1..start + capacity) |value| try bus.produce(value);
-                try finish(&bus, &gate, draining, start + capacity);
+                if (lap == 0) {
+                    try consume(&bus, gate, start + capacity);
+                } else {
+                    try finish(&bus, gate, draining, start + capacity);
+                }
 
                 // First consumes whole offers: 5 + 2 up to the boundary, then 1 after wrap.
                 // Second first consumes zero, then at most two: its offered lengths are
@@ -219,8 +229,8 @@ test "partial and zero consumption retry the unconsumed suffix independently per
     }
 }
 
-test "running and draining callbacks borrow ring storage across wraps and restarts" {
-    // Handler-owned observations are inspected only after finish joins its thread.
+test "running and draining callbacks borrow ring storage across wraps and slot reuse" {
+    // Acquire acknowledgement of each lap before inspecting or resetting handler-owned observations.
     const BorrowedBatch = struct {
         var ring: *const RingBuffer(usize) = undefined;
         var gate: *Gate = undefined;
@@ -247,34 +257,37 @@ test "running and draining callbacks borrow ring storage across wraps and restar
             return events.len;
         }
     };
-    const borrowed_handlers = [_]EventHandler(usize){BorrowedBatch.handle};
-
     inline for (.{ false, true }) |multi_producer| {
         for ([_]bool{ false, true }) |draining| {
-            const BorrowedBus = EventBus(usize, multi_producer, &borrowed_handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            const BorrowedBus = EventBus(usize, multi_producer, &.{BorrowedBatch.handle}, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
             var bus = try BorrowedBus.init(std.testing.allocator, capacity, capacity);
             defer bus.deinit();
             BorrowedBatch.ring = &bus.buffer;
 
+            var gates: [2]Gate = .{ .{}, .{} };
+            var entered: [2]Counter = .{ .{}, .{} };
+            defer {
+                for (&gates) |*gate| gate.open();
+                bus.stop() catch {};
+            }
             for (0..2) |lap| {
-                var gate: Gate = .{};
-                var entered: Counter = .{};
-                BorrowedBatch.gate = &gate;
-                BorrowedBatch.entered = &entered;
+                const gate = &gates[lap];
+                BorrowedBatch.gate = gate;
+                BorrowedBatch.entered = &entered[lap];
                 BorrowedBatch.paused = false;
                 BorrowedBatch.borrowed = true;
                 BorrowedBatch.calls = 0;
                 BorrowedBatch.count = 0;
                 const start = lap * capacity + 1;
-                try bus.start();
-                defer {
-                    gate.open();
-                    bus.stop() catch {};
-                }
+                if (lap == 0) try bus.start();
                 try bus.produce(start);
-                entered.waitFor(1);
+                entered[lap].waitFor(1);
                 for (start + 1..start + capacity) |value| try bus.produce(value);
-                try finish(&bus, &gate, draining, start + capacity);
+                if (lap == 0) {
+                    try consume(&bus, gate, start + capacity);
+                } else {
+                    try finish(&bus, gate, draining, start + capacity);
+                }
 
                 try std.testing.expect(BorrowedBatch.borrowed);
                 // One paused call plus the seven-slot prefix and the one-slot wrapped tail.
@@ -291,34 +304,30 @@ test "running and draining batches stop at unpublished or stale claims before la
             var bus = try Bus(true).init(std.testing.allocator, capacity, capacity);
             defer bus.deinit();
             for (0..capacity) |sequence| bus.buffer.save(sequence, std.math.maxInt(usize));
-            // Warm up a complete lap when testing stale markers. Otherwise untouched
-            // slots contain zero; both cases must hide later publications behind the gap.
-            if (stale) {
-                var gate: Gate = .{};
-                var entered: Counter = .{};
-                First.reset(&gate, &entered);
-                Second.reset(&gate, &entered);
-                try bus.start();
-                defer {
-                    gate.open();
-                    bus.stop() catch {};
-                }
-                try bus.produce(1);
-                entered.waitFor(handlers.len);
-                for (2..capacity + 1) |value| try bus.produce(value);
-                try finish(&bus, &gate, false, capacity + 1);
-            }
-
+            var warmup_gate: Gate = .{};
+            var warmup_entered: Counter = .{};
             var gate: Gate = .{};
             var entered: Counter = .{};
-            First.reset(&gate, &entered);
-            Second.reset(&gate, &entered);
-            const start = bus.sequencer.nextClaimSequence();
-            try bus.start();
             defer {
+                warmup_gate.open();
                 gate.open();
                 bus.stop() catch {};
             }
+            First.reset(if (stale) &warmup_gate else &gate, if (stale) &warmup_entered else &entered);
+            Second.reset(if (stale) &warmup_gate else &gate, if (stale) &warmup_entered else &entered);
+            try bus.start();
+            // Warm up a complete lap without stopping when testing stale markers.
+            // Otherwise untouched slots contain zero; both cases must hide later publications.
+            if (stale) {
+                try bus.produce(1);
+                warmup_entered.waitFor(handlers.len);
+                for (2..capacity + 1) |value| try bus.produce(value);
+                try consume(&bus, &warmup_gate, capacity + 1);
+                First.reset(&gate, &entered);
+                Second.reset(&gate, &entered);
+            }
+
+            const start = bus.sequencer.nextClaimSequence();
             try bus.produce(start);
             entered.waitFor(handlers.len);
             try bus.produce(start + 1);
