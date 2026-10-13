@@ -36,6 +36,13 @@ test "EventBus init releases ring storage when later allocations fail" {
                 const Bus = EventBus(usize, multi_producer, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
                 var bus = try Bus.init(allocator, 8, 1);
                 defer bus.deinit();
+
+                try bus.registerEventHandler(handler);
+
+                try bus.start();
+                defer bus.stop() catch unreachable;
+
+                try bus.produce(10);
             }
         };
         try std.testing.checkAllAllocationFailures(std.testing.allocator, Check.initAndDeinit, .{});
