@@ -7,6 +7,11 @@ const PaddedAtomicSeq = struct {
     value: std.atomic.Value(usize) align(std.atomic.cache_line),
 };
 
+pub const SequencerError = error{
+    ConsumersNotInitialized,
+    ConsumersAlreadyInitialized,
+};
+
 /// Owns sequence coordination independently of event storage, waiting, and lifecycle.
 ///
 /// Sequences start at one and must not overflow. Consumers track their next unread sequence.
@@ -16,37 +21,43 @@ pub fn Sequencer(comptime multi_producer: bool) type {
     return struct {
         claim_policy: ClaimPolicy,
         buffer_seq: []std.atomic.Value(usize),
-        consumer_seq: []PaddedAtomicSeq,
+        consumer_seq: ?[]PaddedAtomicSeq,
         mask: usize,
         allocator: std.mem.Allocator,
 
         const Self = @This();
 
         /// Allocates unpublished slot markers and consumer counters starting at one.
-        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, consumer_count: usize) !Self {
+        pub fn init(allocator: std.mem.Allocator, buffer_size: usize) !Self {
             if (buffer_size == 0 or buffer_size & (buffer_size - 1) != 0) return error.IncorrectBufferSize;
 
             const buffer_seq = try allocator.alloc(std.atomic.Value(usize), buffer_size);
             errdefer allocator.free(buffer_seq);
             @memset(buffer_seq, .init(0));
 
-            const consumer_seq = try allocator.alloc(PaddedAtomicSeq, consumer_count);
-            errdefer allocator.free(consumer_seq);
-            @memset(consumer_seq, .{ .value = .init(1) });
-
             return .{
                 .claim_policy = ClaimPolicy.init(buffer_size),
                 .buffer_seq = buffer_seq,
-                .consumer_seq = consumer_seq,
+                .consumer_seq = null,
                 .mask = buffer_size - 1,
                 .allocator = allocator,
             };
         }
 
+        pub fn initConsumers(self: *Self, consumer_count: usize) !void {
+            if (self.consumer_seq != null) return SequencerError.ConsumersAlreadyInitialized;
+
+            const consumer_seq = try self.allocator.alloc(PaddedAtomicSeq, consumer_count);
+            errdefer self.allocator.free(consumer_seq);
+            @memset(consumer_seq, .{ .value = .init(1) });
+
+            self.consumer_seq = consumer_seq;
+        }
+
         /// Frees coordination storage after all producers and consumers have finished.
         pub fn deinit(self: *Self) void {
             self.allocator.free(self.buffer_seq);
-            self.allocator.free(self.consumer_seq);
+            if (self.consumer_seq) |csq| self.allocator.free(csq);
         }
 
         /// Reserves a sequence without waiting for capacity or publishing it.
@@ -60,8 +71,11 @@ pub fn Sequencer(comptime multi_producer: bool) type {
         }
 
         /// Checks slot reuse against this sequencer's consumer counters.
-        pub fn isSlotSafeToWrite(self: *Self, sequence: usize) bool {
-            return self.claim_policy.isSlotSafeToWrite(sequence, self.consumer_seq);
+        pub fn isSlotSafeToWrite(self: *Self, sequence: usize) !bool {
+            return if (self.consumer_seq) |csq|
+                self.claim_policy.isSlotSafeToWrite(sequence, csq)
+            else
+                SequencerError.ConsumersNotInitialized;
         }
 
         /// Release-publishes a slot after the caller has written its event.
@@ -87,14 +101,21 @@ pub fn Sequencer(comptime multi_producer: bool) type {
         /// Reads next-unread progress with acquire ordering for cross-thread observations.
         ///
         /// The owning consumer may use monotonic ordering when loading its startup cursor.
-        pub fn consumerSequence(self: *const Self, consumer_id: usize, comptime ordering: std.builtin.AtomicOrder) usize {
+        pub fn consumerSequence(self: *const Self, consumer_id: usize, comptime ordering: std.builtin.AtomicOrder) !usize {
             comptime std.debug.assert(ordering == .monotonic or ordering == .acquire);
-            return self.consumer_seq[consumer_id].value.load(ordering);
+
+            return if (self.consumer_seq) |csq|
+                csq[consumer_id].value.load(ordering)
+            else
+                SequencerError.ConsumersNotInitialized;
         }
 
         /// Release-acknowledges a consumed prefix; only this consumer advances its counter.
-        pub fn acknowledge(self: *Self, consumer_id: usize, next_unread: usize) void {
-            self.consumer_seq[consumer_id].value.store(next_unread, .release);
+        pub fn acknowledge(self: *Self, consumer_id: usize, next_unread: usize) !void {
+            return if (self.consumer_seq) |csq|
+                csq[consumer_id].value.store(next_unread, .release)
+            else
+                SequencerError.ConsumersNotInitialized;
         }
     };
 }

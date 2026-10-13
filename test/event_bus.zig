@@ -2,19 +2,17 @@
 
 const std = @import("std");
 const EventBus = @import("zigrupt").EventBus;
-const EventHandler = @import("zigrupt").EventHandler;
 const waiting_strategy = @import("zigrupt").waiting_strategy;
 const Recorder = @import("support/utils.zig").Recorder;
 
 // Lifecycle tests need a registered handler but never publish an accepted event.
-const handlers = [_]EventHandler(usize){Recorder(0, 1).handle};
+const handler = Recorder(0, 1).handle;
 
 test "EventBus init" {
     inline for (.{ false, true }) |multi_producer| {
         const Bus = EventBus(
             usize,
             multi_producer,
-            &handlers,
             waiting_strategy.BusySpin,
             waiting_strategy.BusySpin,
         );
@@ -35,7 +33,7 @@ test "EventBus init releases ring storage when later allocations fail" {
         const Check = struct {
             /// Exercises successful teardown and each injected allocation-failure path.
             fn initAndDeinit(allocator: std.mem.Allocator) !void {
-                const Bus = EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+                const Bus = EventBus(usize, multi_producer, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
                 var bus = try Bus.init(allocator, 8, 1);
                 defer bus.deinit();
             }
@@ -47,7 +45,7 @@ test "EventBus init releases ring storage when later allocations fail" {
 test "start rejects a bus with no registered handlers and leaves it idle" {
     inline for (.{ false, true }) |multi_producer| {
         for ([_]usize{ 1, 8 }) |capacity| {
-            const Bus = EventBus(usize, multi_producer, &.{}, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            const Bus = EventBus(usize, multi_producer, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
             var bus = try Bus.init(std.testing.allocator, capacity, 1);
             defer bus.deinit();
             defer bus.stop() catch {};
@@ -69,13 +67,13 @@ test "DuplicateStart" {
         const Bus = EventBus(
             usize,
             multi_producer,
-            &handlers,
             waiting_strategy.BusySpin,
             waiting_strategy.BusySpin,
         );
         var bus = try Bus.init(std.testing.allocator, 1024, 1);
         defer bus.deinit();
 
+        _ = try bus.registerEventHandler(handler);
         try bus.start();
         defer bus.stop() catch {};
 
@@ -85,9 +83,10 @@ test "DuplicateStart" {
 
 test "stopped bus rejects restart, publication and repeated stop without changing sequences" {
     inline for (.{ false, true }) |multi_producer| {
-        const Bus = EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+        const Bus = EventBus(usize, multi_producer, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
         var bus = try Bus.init(std.testing.allocator, 8, 1);
         defer bus.deinit();
+        try bus.registerEventHandler(handler);
         try bus.start();
         defer bus.stop() catch {};
         try bus.stop();
@@ -99,7 +98,7 @@ test "stopped bus rejects restart, publication and repeated stop without changin
             try std.testing.expectError(error.BusStopped, bus.stop());
             try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
             try std.testing.expectEqual(1, bus.sequencer.nextClaimSequence());
-            try std.testing.expectEqual(1, bus.sequencer.consumerSequence(0, .acquire));
+            try std.testing.expectEqual(1, try bus.sequencer.consumerSequence(0, .acquire));
         }
     }
 }
@@ -109,12 +108,13 @@ test "start and stop require lifecycle owner" {
         const Bus = EventBus(
             usize,
             multi_producer,
-            &handlers,
             waiting_strategy.BusySpin,
             waiting_strategy.BusySpin,
         );
         var bus = try Bus.init(std.testing.allocator, 1024, 1);
         defer bus.deinit();
+
+        _ = try bus.registerEventHandler(handler);
 
         // Worker for attempting lifecycle operations outside the initializing thread.
         const worker = struct {

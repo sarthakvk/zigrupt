@@ -20,7 +20,6 @@ const concurrent_handlers = [_]EventHandler(usize){ First.handle, Second.handle 
 const Bus = EventBus(
     usize,
     true,
-    &concurrent_handlers,
     waiting_strategy.BusySpin,
     waiting_strategy.BusySpin,
 );
@@ -105,6 +104,8 @@ test "MultiProducer concurrent producers deliver exactly once across wraps" {
         Second.reset();
         var bus = try Bus.init(std.testing.allocator, buffer_size, 1);
         defer bus.deinit();
+        var handlers = concurrent_handlers;
+        _ = try bus.registerEventHandlers(&handlers);
 
         try std.testing.expectEqual(.idle, bus.state.load(.acquire));
         try bus.start();
@@ -136,6 +137,8 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
 
     var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
+    var handlers = concurrent_handlers;
+    _ = try bus.registerEventHandlers(&handlers);
     try bus.start();
     defer {
         first_gate.open();
@@ -166,9 +169,9 @@ test "MultiProducer full buffer blocks all producers until the slowest handler a
 
     // Advancing only the first handler must not free slots still held by the second.
     first_gate.open();
-    while (bus.sequencer.consumerSequence(0, .acquire) < capacity + 1) std.Thread.yield() catch {};
+    while (try bus.sequencer.consumerSequence(0, .acquire) < capacity + 1) std.Thread.yield() catch {};
     const completed_with_slow_handler = producers.completed.get();
-    const slow_handler_sequence = bus.sequencer.consumerSequence(1, .acquire);
+    const slow_handler_sequence = try bus.sequencer.consumerSequence(1, .acquire);
 
     second_gate.open();
     producers.join();
@@ -212,7 +215,6 @@ const PausedPublisher = struct {
 const GapBus = EventBus(
     usize,
     true,
-    &concurrent_handlers,
     PausedPublisher,
     waiting_strategy.BusySpin,
 );
@@ -231,6 +233,8 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
 
     var bus = try GapBus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
+    var handlers = concurrent_handlers;
+    _ = try bus.registerEventHandlers(&handlers);
     try bus.start();
     defer {
         gate.open();
@@ -260,8 +264,8 @@ test "MultiProducer handlers wait for an unpublished claim before consuming a la
         later.join();
 
         for (&sequences_at_gap, 0..) |*sequence, consumer_id| {
-            while (bus.sequencer.consumerSequence(consumer_id, .acquire) < capacity + 1) std.Thread.yield() catch {};
-            sequence.* = bus.sequencer.consumerSequence(consumer_id, .acquire);
+            while (try bus.sequencer.consumerSequence(consumer_id, .acquire) < capacity + 1) std.Thread.yield() catch {};
+            sequence.* = try bus.sequencer.consumerSequence(consumer_id, .acquire);
         }
         // Snapshot before releasing the earlier publisher: its slot still carries a
         // stale marker while the later slot is published. Cursors must stop at the gap.
@@ -289,6 +293,8 @@ test "MultiProducer stop drains all producers and preserves final sequences" {
 
     var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
+    var handlers = concurrent_handlers;
+    _ = try bus.registerEventHandlers(&handlers);
     try bus.start();
     defer {
         gate.open();
@@ -311,6 +317,6 @@ test "MultiProducer stop drains all producers and preserves final sequences" {
 
     try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
     for (concurrent_handlers, 0..) |_, consumer_id| {
-        try std.testing.expectEqual(capacity + 1, bus.sequencer.consumerSequence(consumer_id, .acquire));
+        try std.testing.expectEqual(capacity + 1, try bus.sequencer.consumerSequence(consumer_id, .acquire));
     }
 }

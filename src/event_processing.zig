@@ -34,8 +34,8 @@ pub fn EventProcessor(
         /// Runs handler over contiguous published batches without crossing the ring boundary.
         ///
         /// Acquire publication loads expose event data; release progress stores permit slot reuse.
-        pub fn run(self: *Self, bus_state: *const atomic.Value(EventBusState), sequencer: anytype, storage: anytype) void {
-            var c_seq = sequencer.consumerSequence(self.id, .monotonic);
+        pub fn run(self: *Self, bus_state: *const atomic.Value(EventBusState), sequencer: anytype, storage: anytype) !void {
+            var c_seq = try sequencer.consumerSequence(self.id, .monotonic);
 
             var state = bus_state.load(.monotonic);
 
@@ -51,7 +51,7 @@ pub fn EventProcessor(
 
                 const events_slice = storage.slice(c_seq, batch_size);
                 c_seq += self.callback(events_slice);
-                sequencer.acknowledge(self.id, c_seq);
+                try sequencer.acknowledge(self.id, c_seq);
             }
 
             // Invariant: after running, the state can only be draining
@@ -67,7 +67,7 @@ pub fn EventProcessor(
 
                 const events_slice = storage.slice(c_seq, batch_size);
                 c_seq += self.callback(events_slice);
-                sequencer.acknowledge(self.id, c_seq);
+                try sequencer.acknowledge(self.id, c_seq);
             }
         }
     };

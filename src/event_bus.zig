@@ -5,11 +5,12 @@ const atomic = std.atomic;
 const waiting_strategy = @import("waiting_strategy.zig");
 const sequencer = @import("sequencer.zig");
 const event_processing = @import("event_processing.zig");
+
 const RingBuffer = @import("ring_buffer.zig").RingBuffer;
 
 const mem = std.mem;
 
-pub const EventHandler = event_processing.EventHandler;
+const EventHandler = event_processing.EventHandler;
 
 /// Configuration and lifecycle errors returned by event bus operations.
 pub const EventBusError = error{
@@ -50,13 +51,13 @@ pub const EventBusState = enum(u8) {
 pub fn EventBus(
     comptime T: type,
     multi_producer: bool,
-    event_handlers: []const EventHandler(T),
     PublisherWaitingStrategy: type,
     ConsumerWaitingStrategy: type,
 ) type {
     waiting_strategy.validateWaitingStrategy(PublisherWaitingStrategy);
     waiting_strategy.validateWaitingStrategy(ConsumerWaitingStrategy);
 
+    // Sequencer type
     const Sequencer = sequencer.Sequencer(multi_producer);
     const EventProcessor = event_processing.EventProcessor(T, ConsumerWaitingStrategy);
 
@@ -64,6 +65,8 @@ pub fn EventBus(
         buffer: RingBuffer(T),
         max_batch_size: usize,
         state: atomic.Value(EventBusState),
+        running_processes: ?[]EventProcessor,
+        registered_processes: std.ArrayList(EventProcessor),
 
         sequencer: Sequencer,
         threads: []?std.Thread,
@@ -88,24 +91,54 @@ pub fn EventBus(
             var buffer = try RingBuffer(T).init(allocator, buffer_size);
             errdefer buffer.deinit();
 
-            var sequence_coordinator = try Sequencer.init(allocator, buffer_size, event_handlers.len);
+            var sequence_coordinator = try Sequencer.init(allocator, buffer_size);
             errdefer sequence_coordinator.deinit();
-
-            const threads = try allocator.alloc(?std.Thread, event_handlers.len);
-            errdefer allocator.free(threads);
-            @memset(threads, null);
 
             return .{
                 .buffer = buffer,
                 .max_batch_size = max_batch_size,
                 .state = .init(.idle),
+                .running_processes = null,
                 .sequencer = sequence_coordinator,
-                .threads = threads,
+                .threads = &.{},
                 .lifecycle_owner = std.Thread.getCurrentId(),
                 .allocator = allocator,
+                .registered_processes = .empty,
             };
         }
 
+        /// Register EventHandler
+        pub fn registerEventHandler(self: *Self, callback: EventHandler(T)) !void {
+            try self.ensureLifecycleOwner();
+
+            switch (self.state.load(.monotonic)) {
+                .draining => return EventBusError.BusDraining,
+                .running => return EventBusError.BusRunning,
+                .starting => return EventBusError.BusStarting,
+                .stopped => return EventBusError.BusStopped,
+                .idle => {},
+            }
+
+            const processor = EventProcessor.init(self.registered_processes.items.len, callback, self.max_batch_size);
+            try self.registered_processes.append(self.allocator, processor);
+        }
+
+        /// Register EventHandlers
+        pub fn registerEventHandlers(self: *Self, callbacks: []EventHandler(T)) !void {
+            try self.ensureLifecycleOwner();
+
+            switch (self.state.load(.monotonic)) {
+                .draining => return EventBusError.BusDraining,
+                .running => return EventBusError.BusRunning,
+                .starting => return EventBusError.BusStarting,
+                .stopped => return EventBusError.BusStopped,
+                .idle => {},
+            }
+
+            for (callbacks) |callback| {
+                try self.registerEventHandler(callback);
+            }
+        }
         /// Frees bus storage.
         ///
         /// The bus must be idle with no producer calls in flight.
@@ -115,6 +148,7 @@ pub fn EventBus(
             self.buffer.deinit();
             self.sequencer.deinit();
             self.allocator.free(self.threads);
+            self.registered_processes.deinit(self.allocator);
         }
 
         /// Starts one thread per handler, preserving sequence progress across restarts.
@@ -139,18 +173,28 @@ pub fn EventBus(
                 .idle => {},
             }
 
-            if (event_handlers.len == 0) return EventBusError.NoHandlersRegistered;
+            if (self.registered_processes.items.len == 0) return EventBusError.NoHandlersRegistered;
 
+            // set state to starting before doing any operations
             self.state.store(.starting, .monotonic);
 
             // On partial startup failure, drain and join the threads already spawned.
             errdefer self.stop() catch unreachable;
 
-            for (0..event_handlers.len) |eid| {
-                self.threads[eid] = try std.Thread.spawn(
+            self.running_processes = self.registered_processes.items;
+            try self.sequencer.initConsumers(self.running_processes.?.len);
+
+            self.threads = try self.allocator.alloc(?std.Thread, self.running_processes.?.len);
+            @memset(self.threads, null);
+
+            // readonly pointer to buffer
+            const buffer_ro: *const RingBuffer(T) = &self.buffer;
+
+            for (self.running_processes.?, 0..) |*proc, i| {
+                self.threads[i] = try std.Thread.spawn(
                     .{ .allocator = self.allocator },
-                    Self.handleEvent,
-                    .{ self, eid },
+                    EventProcessor.run,
+                    .{ proc, &self.state, &self.sequencer, buffer_ro },
                 );
             }
 
@@ -183,18 +227,12 @@ pub fn EventBus(
             }
 
             self.state.store(.draining, .monotonic);
-
             for (self.threads) |th_op| {
                 if (th_op) |th| th.join();
             }
 
             // Invariant: After stop exits, the bus will be in idle state.
             self.state.store(.stopped, .release);
-        }
-
-        fn handleEvent(self: *Self, handler_id: usize) void {
-            var processor = EventProcessor.init(handler_id, event_handlers[handler_id], self.max_batch_size);
-            processor.run(&self.state, &self.sequencer, &self.buffer);
         }
 
         /// Copies an event into the ring, waiting for all consumers before reusing its slot.
@@ -220,7 +258,7 @@ pub fn EventBus(
             const seq = self.sequencer.claim();
 
             // wait until the slot is safe to write
-            while (!self.sequencer.isSlotSafeToWrite(seq)) {
+            while (!try self.sequencer.isSlotSafeToWrite(seq)) {
                 PublisherWaitingStrategy.wait();
             }
 

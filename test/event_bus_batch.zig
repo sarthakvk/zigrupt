@@ -92,14 +92,14 @@ const handlers = [_]EventHandler(usize){ First.handle, Second.handle };
 
 /// Creates a bus type for the chosen producer mode.
 fn Bus(comptime multi_producer: bool) type {
-    return EventBus(usize, multi_producer, &handlers, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+    return EventBus(usize, multi_producer, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
 }
 
 /// Releases handlers and waits for every next-unread cursor while keeping the bus running.
 fn consume(bus: anytype, gate: *Gate, next_sequence: usize) !void {
     gate.open();
-    for (0..bus.sequencer.consumer_seq.len) |consumer_id| {
-        while (bus.sequencer.consumerSequence(consumer_id, .acquire) < next_sequence) std.Thread.yield() catch {};
+    for (0..bus.sequencer.consumer_seq.?.len) |consumer_id| {
+        while (try bus.sequencer.consumerSequence(consumer_id, .acquire) < next_sequence) std.Thread.yield() catch {};
     }
 }
 
@@ -152,6 +152,7 @@ test "running and draining batches respect size, wrap and the end of the queue" 
             for (cases) |case| {
                 var bus = try Bus(multi_producer).init(std.testing.allocator, capacity, case.max_batch);
                 defer bus.deinit();
+                for (handlers) |handler| try bus.registerEventHandler(handler);
                 // A bad batch should report extra deliveries, not read undefined data.
                 for (0..capacity) |sequence| bus.buffer.save(sequence, std.math.maxInt(usize));
                 var gate: Gate = .{};
@@ -175,7 +176,7 @@ test "running and draining batches respect size, wrap and the end of the queue" 
                     try recorder.expectRange(1, case.events);
                 }
                 for (handlers, 0..) |_, consumer_id| {
-                    try std.testing.expectEqual(case.events + 1, bus.sequencer.consumerSequence(consumer_id, .acquire));
+                    try std.testing.expectEqual(case.events + 1, try bus.sequencer.consumerSequence(consumer_id, .acquire));
                 }
             }
         }
@@ -187,6 +188,7 @@ test "partial and zero consumption retry the unconsumed suffix independently per
         for ([_]bool{ false, true }) |draining| {
             var bus = try Bus(multi_producer).init(std.testing.allocator, capacity, 5);
             defer bus.deinit();
+            for (handlers) |handler| try bus.registerEventHandler(handler);
             // Keep the bus running across laps so reused slots cannot replay old publications.
             var gates: [2]Gate = .{ .{}, .{} };
             var entered: [2]Counter = .{ .{}, .{} };
@@ -222,7 +224,7 @@ test "partial and zero consumption retry the unconsumed suffix independently per
                 try First.expectRange(start, capacity);
                 try Second.expectRange(start, capacity);
                 for (handlers, 0..) |_, consumer_id| {
-                    try std.testing.expectEqual(start + capacity, bus.sequencer.consumerSequence(consumer_id, .acquire));
+                    try std.testing.expectEqual(start + capacity, try bus.sequencer.consumerSequence(consumer_id, .acquire));
                 }
             }
         }
@@ -259,9 +261,10 @@ test "running and draining callbacks borrow ring storage across wraps and slot r
     };
     inline for (.{ false, true }) |multi_producer| {
         for ([_]bool{ false, true }) |draining| {
-            const BorrowedBus = EventBus(usize, multi_producer, &.{BorrowedBatch.handle}, waiting_strategy.BusySpin, waiting_strategy.BusySpin);
+            const BorrowedBus = Bus(multi_producer);
             var bus = try BorrowedBus.init(std.testing.allocator, capacity, capacity);
             defer bus.deinit();
+            try bus.registerEventHandler(BorrowedBatch.handle);
             BorrowedBatch.ring = &bus.buffer;
 
             var gates: [2]Gate = .{ .{}, .{} };
@@ -303,6 +306,7 @@ test "running and draining batches stop at unpublished or stale claims before la
         for ([_]bool{ false, true }) |stale| {
             var bus = try Bus(true).init(std.testing.allocator, capacity, capacity);
             defer bus.deinit();
+            for (handlers) |handler| try bus.registerEventHandler(handler);
             for (0..capacity) |sequence| bus.buffer.save(sequence, std.math.maxInt(usize));
             var warmup_gate: Gate = .{};
             var warmup_entered: Counter = .{};
@@ -346,7 +350,7 @@ test "running and draining batches stop at unpublished or stale claims before la
                 try recorder.expectRange(start, 2);
             }
             for (handlers, 0..) |_, consumer_id| {
-                try std.testing.expectEqual(gap, bus.sequencer.consumerSequence(consumer_id, .acquire));
+                try std.testing.expectEqual(gap, try bus.sequencer.consumerSequence(consumer_id, .acquire));
             }
             // Claims extend past the gap, but consumption and draining must stop at it.
             try std.testing.expectEqual(gap + 4, bus.sequencer.nextClaimSequence());

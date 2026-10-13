@@ -25,11 +25,11 @@ test "single producer tests" {
     var bus = try EventBus(
         usize,
         false,
-        &handlers,
         waiting_strategy.BusySpin,
         waiting_strategy.BusySpin,
     ).init(allocator, 8, 1);
     defer bus.deinit();
+    for (handlers) |handler| try bus.registerEventHandler(handler);
 
     try std.testing.expect(bus.state.load(.acquire) == .idle);
 
@@ -59,7 +59,6 @@ const concurrent_handlers = [_]EventHandler(usize){ First.handle, Second.handle 
 const Bus = EventBus(
     usize,
     false,
-    &concurrent_handlers,
     waiting_strategy.BusySpin,
     waiting_strategy.BusySpin,
 );
@@ -75,7 +74,7 @@ fn publish(bus: *Bus, start: usize, len: usize) void {
             for (concurrent_handlers, 0..) |_, consumer_id| {
                 // The previous occupant is sequence value + 1 - capacity. A next-unread
                 // cursor must be strictly past it before the producer can overwrite it.
-                while (bus.sequencer.consumerSequence(consumer_id, .acquire) <= value + 1 - capacity) {
+                while ((bus.sequencer.consumerSequence(consumer_id, .acquire) catch unreachable) <= value + 1 - capacity) {
                     std.Thread.yield() catch {};
                 }
             }
@@ -89,6 +88,7 @@ test "concurrent producer and two handlers preserve order across wraps" {
     Second.reset();
     var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
+    for (concurrent_handlers) |handler| try bus.registerEventHandler(handler);
 
     try bus.start();
     const producer = try std.Thread.spawn(.{}, publish, .{ &bus, @as(usize, 0), event_count });
@@ -124,6 +124,7 @@ test "publisher waits for a full buffer until handlers advance" {
 
     var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
+    for (concurrent_handlers) |handler| try bus.registerEventHandler(handler);
     try bus.start();
 
     var attempting: Gate = .{};
@@ -156,6 +157,7 @@ test "stop drains queued events from paused handlers and preserves final sequenc
 
     var bus = try Bus.init(std.testing.allocator, capacity, 1);
     defer bus.deinit();
+    for (concurrent_handlers) |handler| try bus.registerEventHandler(handler);
     try bus.start();
 
     const producer = try std.Thread.spawn(.{}, publish, .{ &bus, @as(usize, 0), capacity });
@@ -173,6 +175,6 @@ test "stop drains queued events from paused handlers and preserves final sequenc
     try std.testing.expectEqual(.stopped, bus.state.load(.acquire));
     try std.testing.expectEqual(capacity + 1, bus.sequencer.nextClaimSequence());
     for (concurrent_handlers, 0..) |_, consumer_id| {
-        try std.testing.expectEqual(capacity + 1, bus.sequencer.consumerSequence(consumer_id, .acquire));
+        try std.testing.expectEqual(capacity + 1, try bus.sequencer.consumerSequence(consumer_id, .acquire));
     }
 }
