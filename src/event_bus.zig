@@ -4,20 +4,12 @@ const std = @import("std");
 const atomic = std.atomic;
 const waiting_strategy = @import("waiting_strategy.zig");
 const sequencer = @import("sequencer.zig");
+const event_processing = @import("event_processing.zig");
 const RingBuffer = @import("ring_buffer.zig").RingBuffer;
 
 const mem = std.mem;
 
-/// Callback that returns the number of events consumed from the start of a batch.
-///
-/// Return at most the slice length; zero retries the same events without advancing progress.
-///
-/// The slice is borrowed for the call only.
-///
-/// Each handler runs on its own consumer thread.
-pub fn EventHandler(comptime T: type) type {
-    return *const fn ([]const T) usize;
-}
+pub const EventHandler = event_processing.EventHandler;
 
 /// Configuration and lifecycle errors returned by event bus operations.
 pub const EventBusError = error{
@@ -63,6 +55,7 @@ pub fn EventBus(
     waiting_strategy.validateWaitingStrategy(ConsumerWaitingStrategy);
 
     const Sequencer = sequencer.Sequencer(multi_producer);
+    const EventProcessor = event_processing.EventProcessor(T, ConsumerWaitingStrategy);
 
     return struct {
         buffer: RingBuffer(T),
@@ -193,47 +186,9 @@ pub fn EventBus(
             self.state.store(.idle, .release);
         }
 
-        /// Runs one handler over contiguous published batches without crossing the ring boundary.
-        ///
-        /// `handler_id` selects its callback and progress counter; only this thread advances it.
-        ///
-        /// Acquire publication loads expose event data; release progress stores permit slot reuse.
         fn handleEvent(self: *Self, handler_id: usize) void {
-            const handler = event_handlers[handler_id];
-            var c_seq = self.sequencer.consumerSequence(handler_id, .monotonic);
-
-            var state = self.state.load(.monotonic);
-
-            // Invariant: Events are only consumed when the bus is in running/draining state.
-            while (state == .starting) : (state = self.state.load(.monotonic)) ConsumerWaitingStrategy.wait();
-
-            while (state == .running) : (state = self.state.load(.monotonic)) {
-                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size);
-                if (batch_size == 0) {
-                    ConsumerWaitingStrategy.wait();
-                    continue;
-                }
-
-                const events_slice = self.buffer.slice(c_seq, batch_size);
-                c_seq += handler(events_slice);
-                self.sequencer.acknowledge(handler_id, c_seq);
-            }
-
-            // Invariant: after running, the state can only be draining
-            // until all the handler threads join.
-            std.debug.assert(state == .draining);
-
-            // Snapshot claims for draining; an unpublished gap ends the drain below.
-            const cursor = self.sequencer.nextClaimSequence();
-
-            while (c_seq < cursor) {
-                const batch_size = self.sequencer.publishedBatchSize(c_seq, self.max_batch_size);
-                if (batch_size == 0) break;
-
-                const events_slice = self.buffer.slice(c_seq, batch_size);
-                c_seq += handler(events_slice);
-                self.sequencer.acknowledge(handler_id, c_seq);
-            }
+            var processor = EventProcessor.init(handler_id, event_handlers[handler_id], self.max_batch_size);
+            processor.run(&self.state, &self.sequencer, &self.buffer);
         }
 
         /// Copies an event into the ring, waiting for all consumers before reusing its slot.

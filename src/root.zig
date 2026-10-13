@@ -9,11 +9,13 @@ const std = @import("std");
 /// Event bus types, callbacks, lifecycle states, and errors.
 pub const event_bus = @import("event_bus.zig");
 
+pub const event_processing = @import("event_processing.zig");
+
 /// Creates a ring-buffer bus type; see `EventBus` in `event_bus.zig` for configuration and lifecycle requirements.
 pub const EventBus = event_bus.EventBus;
 
 /// Callback type that acknowledges a consumed prefix of an event batch.
-pub const EventHandler = event_bus.EventHandler;
+pub const EventHandler = event_processing.EventHandler;
 
 /// Fixed-capacity ring-buffer storage.
 pub const ring_buffer = @import("ring_buffer.zig");
