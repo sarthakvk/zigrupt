@@ -124,7 +124,7 @@ pub fn EventBus(
         }
 
         /// Register EventHandlers
-        pub fn registerEventHandlers(self: *Self, callbacks: []EventHandler(T)) !void {
+        pub fn registerEventHandlers(self: *Self, callbacks: []const EventHandler(T)) !void {
             try self.ensureLifecycleOwner();
 
             switch (self.state.load(.monotonic)) {
