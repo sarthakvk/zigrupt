@@ -243,7 +243,7 @@ pub fn EventBus(
         ///
         /// Once claimed, a publication waits for capacity without rechecking lifecycle state.
         pub fn produce(self: *Self, event: T) !void {
-            const state = self.state.load(.monotonic);
+            const state = self.state.load(.acquire);
 
             // Invariant: Bus will only accept events when
             // it is in running state.
